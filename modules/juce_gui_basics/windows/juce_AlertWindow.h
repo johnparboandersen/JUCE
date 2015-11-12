@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -198,25 +198,23 @@ public:
     void addCustomComponent (Component* component);
 
     /** Returns the number of custom components in the dialog box.
-
         @see getCustomComponent, addCustomComponent
     */
     int getNumCustomComponents() const;
 
     /** Returns one of the custom components in the dialog box.
 
-        @param index    a value 0 to (getNumCustomComponents() - 1). Out-of-range indexes
-                        will return 0
+        @param index    a value 0 to (getNumCustomComponents() - 1).
+                        Out-of-range indexes will return nullptr
         @see getNumCustomComponents, addCustomComponent
     */
     Component* getCustomComponent (int index) const;
 
     /** Removes one of the custom components in the dialog box.
-
         Note that this won't delete it, it just removes the component from the window
 
-        @param index    a value 0 to (getNumCustomComponents() - 1). Out-of-range indexes
-                        will return 0
+        @param index    a value 0 to (getNumCustomComponents() - 1).
+                        Out-of-range indexes will return nullptr
         @returns        the component that was removed (or null)
         @see getNumCustomComponents, addCustomComponent
     */
@@ -415,6 +413,33 @@ public:
         backgroundColourId          = 0x1001800,  /**< The background colour for the window. */
         textColourId                = 0x1001810,  /**< The colour for the text. */
         outlineColourId             = 0x1001820   /**< An optional colour to use to draw a border around the window. */
+    };
+
+    //==============================================================================
+    /** This abstract base class is implemented by LookAndFeel classes to provide
+        alert-window drawing functionality.
+    */
+    struct JUCE_API  LookAndFeelMethods
+    {
+        virtual ~LookAndFeelMethods() {}
+
+        virtual AlertWindow* createAlertWindow (const String& title, const String& message,
+                                                const String& button1,
+                                                const String& button2,
+                                                const String& button3,
+                                                AlertWindow::AlertIconType iconType,
+                                                int numButtons,
+                                                Component* associatedComponent) = 0;
+
+        virtual void drawAlertBox (Graphics&, AlertWindow&, const Rectangle<int>& textArea, TextLayout&) = 0;
+
+        virtual int getAlertBoxWindowFlags() = 0;
+
+        virtual int getAlertWindowButtonHeight() = 0;
+
+        virtual Font getAlertWindowTitleFont() = 0;
+        virtual Font getAlertWindowMessageFont() = 0;
+        virtual Font getAlertWindowFont() = 0;
     };
 
 protected:

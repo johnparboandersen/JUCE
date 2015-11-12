@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -32,6 +32,7 @@ Drawable::Drawable (const Drawable& other)
     : Component (other.getName())
 {
     setComponentID (other.getComponentID());
+    setTransform (other.getTransform());
 }
 
 Drawable::~Drawable()
@@ -105,6 +106,18 @@ void Drawable::setBoundsToEnclose (const Rectangle<float>& area)
     const Rectangle<int> newBounds (area.getSmallestIntegerContainer() + parentOrigin);
     originRelativeToComponent = parentOrigin - newBounds.getPosition();
     setBounds (newBounds);
+}
+
+//==============================================================================
+bool Drawable::replaceColour (Colour original, Colour replacement)
+{
+    bool changed = false;
+
+    for (int i = getNumChildComponents(); --i >= 0;)
+        if (Drawable* d = dynamic_cast<Drawable*> (getChildComponent(i)))
+            changed = d->replaceColour (original, replacement) || changed;
+
+    return changed;
 }
 
 //==============================================================================

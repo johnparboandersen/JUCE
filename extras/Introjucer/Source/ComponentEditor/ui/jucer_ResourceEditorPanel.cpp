@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -35,7 +35,7 @@ public:
         : document (doc), reloadButton ("Reload"), row (0)
     {
         setInterceptsMouseClicks (false, true);
-        addAndMakeVisible (&reloadButton);
+        addAndMakeVisible (reloadButton);
         reloadButton.addListener (this);
     }
 
@@ -74,13 +74,13 @@ ResourceEditorPanel::ResourceEditorPanel (JucerDocument& doc)
       reloadAllButton ("Reload all resources"),
       delButton ("Delete selected resources")
 {
-    addAndMakeVisible (&addButton);
+    addAndMakeVisible (addButton);
     addButton.addListener (this);
 
-    addAndMakeVisible (&reloadAllButton);
+    addAndMakeVisible (reloadAllButton);
     reloadAllButton.addListener (this);
 
-    addAndMakeVisible (&delButton);
+    addAndMakeVisible (delButton);
     delButton.addListener (this);
     delButton.setEnabled (false);
 
@@ -129,7 +129,7 @@ void ResourceEditorPanel::paintCell (Graphics& g, int rowNumber, int columnId, i
         else if (columnId == 2)
             text = r->originalFilename;
         else if (columnId == 3)
-            text = File::descriptionOfSizeInBytes (r->data.getSize());
+            text = File::descriptionOfSizeInBytes ((int64) r->data.getSize());
 
         g.setFont (13.0f);
         g.drawText (text, 4, 0, width - 6, height, Justification::centredLeft, true);
@@ -169,7 +169,7 @@ int ResourceEditorPanel::getColumnAutoSizeWidth (int columnId)
         else if (columnId == 2)
             text = r->originalFilename;
         else if (columnId == 3)
-            text = File::descriptionOfSizeInBytes (r->data.getSize());
+            text = File::descriptionOfSizeInBytes ((int64) r->data.getSize());
 
         widest = jmax (widest, f.getStringWidth (text));
     }

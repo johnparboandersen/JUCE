@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -44,18 +44,32 @@ public:
         name = getNameLinux();
 
         if (getTargetLocationString().isEmpty())
-            getTargetLocationValue() = getDefaultBuildsRootFolder() + "Linux";
+            getTargetLocationValue() = getDefaultBuildsRootFolder() + "LinuxMakefile";
+
+        initialiseDependencyPathValues();
     }
 
     //==============================================================================
     bool canLaunchProject() override                    { return false; }
     bool launchProject() override                       { return false; }
     bool usesMMFiles() const override                   { return false; }
+    bool isLinuxMakefile() const override               { return true; }
     bool isLinux() const override                       { return true; }
     bool canCopeWithDuplicateFiles() override           { return false; }
 
-    void createExporterProperties (PropertyListBuilder&) override
+    Value getCppStandardValue()                         { return getSetting (Ids::cppLanguageStandard); }
+    String getCppStandardString() const                 { return settings[Ids::cppLanguageStandard]; }
+
+    void createExporterProperties (PropertyListBuilder& properties) override
     {
+        static const char* cppStandardNames[]  = { "C++03", "C++11", nullptr };
+        static const char* cppStandardValues[] = { "-std=c++03", "-std=c++11", nullptr };
+
+        properties.add (new ChoicePropertyComponent (getCppStandardValue(),
+                                                     "C++ standard to use",
+                                                     StringArray (cppStandardNames),
+                                                     Array<var>  (cppStandardValues)),
+                        "The C++ standard to specify in the makefile");
     }
 
     //==============================================================================
@@ -76,19 +90,23 @@ protected:
     class MakeBuildConfiguration  : public BuildConfiguration
     {
     public:
-        MakeBuildConfiguration (Project& p, const ValueTree& settings)
-            : BuildConfiguration (p, settings)
+        MakeBuildConfiguration (Project& p, const ValueTree& settings, const ProjectExporter& e)
+            : BuildConfiguration (p, settings, e)
         {
             setValueIfVoid (getLibrarySearchPathValue(), "/usr/X11R6/lib/");
         }
 
-        Value getArchitectureType()                 { return getValue (Ids::linuxArchitecture); }
-        String getArchitectureTypeString() const    { return config [Ids::linuxArchitecture]; }
+        Value getArchitectureType()             { return getValue (Ids::linuxArchitecture); }
+        var getArchitectureTypeVar() const      { return config [Ids::linuxArchitecture]; }
+
+        var getDefaultOptimisationLevel() const override    { return var ((int) (isDebug() ? gccO0 : gccO3)); }
 
         void createConfigProperties (PropertyListBuilder& props) override
         {
-            const char* const archNames[] = { "(Default)", "32-bit (-m32)", "64-bit (-m64)", "ARM v6", "ARM v7" };
-            const var archFlags[] = { var(), "-m32", "-m64", "-march=armv6", "-march=armv7" };
+            addGCCOptimisationProperty (props);
+
+            static const char* const archNames[] = { "(Default)", "<None>",       "32-bit (-m32)", "64-bit (-m64)", "ARM v6",       "ARM v7" };
+            const var archFlags[]                = { var(),       var (String()), "-m32",         "-m64",           "-march=armv6", "-march=armv7" };
 
             props.add (new ChoicePropertyComponent (getArchitectureType(), "Architecture",
                                                     StringArray (archNames, numElementsInArray (archNames)),
@@ -98,7 +116,7 @@ protected:
 
     BuildConfiguration::Ptr createBuildConfig (const ValueTree& tree) const override
     {
-        return new MakeBuildConfiguration (project, tree);
+        return new MakeBuildConfiguration (project, tree, *this);
     }
 
 private:
@@ -143,10 +161,10 @@ private:
         searchPaths.insert (0, "/usr/include/freetype2");
         searchPaths.insert (0, "/usr/include");
 
-        searchPaths.removeDuplicates (false);
+        searchPaths = getCleanedStringArray (searchPaths);
 
         for (int i = 0; i < searchPaths.size(); ++i)
-            out << " -I " << addQuotesIfContainsSpaces (FileHelpers::unixStylePath (replacePreprocessorTokens (config, searchPaths[i])));
+            out << " -I " << escapeSpaces (FileHelpers::unixStylePath (replacePreprocessorTokens (config, searchPaths[i])));
     }
 
     void writeCppFlags (OutputStream& out, const BuildConfiguration& config) const
@@ -161,16 +179,26 @@ private:
     {
         out << "  LDFLAGS += $(TARGET_ARCH) -L$(BINDIR) -L$(LIBDIR)";
 
-        if (makefileIsDLL)
-            out << " -shared";
+        {
+            StringArray flags (makefileExtraLinkerFlags);
 
-        if (! config.isDebug())
-            out << " -fvisibility=hidden";
+            if (makefileIsDLL)
+                flags.add ("-shared");
+
+            if (! config.isDebug())
+                flags.add ("-fvisibility=hidden");
+
+            if (flags.size() > 0)
+                out << " " << getCleanedStringArray (flags).joinIntoString (" ");
+        }
 
         out << config.getGCCLibraryPathFlags();
 
         for (int i = 0; i < linuxLibs.size(); ++i)
             out << " -l" << linuxLibs[i];
+
+        if (getProject().isConfigFlagEnabled ("JUCE_USE_CURL"))
+            out << " -lcurl";
 
         StringArray libraries;
         libraries.addTokens (getExternalLibrariesString(), ";", "\"'");
@@ -220,17 +248,20 @@ private:
             << (" "  + replacePreprocessorTokens (config, getExtraCompilerFlagsString())).trimEnd()
             << newLine;
 
-        out << "  CXXFLAGS += $(CFLAGS)" << newLine;
+        String cppStandardToUse (getCppStandardString());
+
+        if (cppStandardToUse.isEmpty())
+            cppStandardToUse = "-std=c++11";
+
+        out << "  CXXFLAGS += $(CFLAGS) "
+            << cppStandardToUse
+            << newLine;
 
         writeLinkerFlags (out, config);
 
-        out << "  LDDEPS :=" << newLine
-            << "  RESFLAGS := ";
-        writeDefineFlags (out, config);
-        writeHeaderPathFlags (out, config);
         out << newLine;
 
-        String targetName (config.getTargetBinaryNameString());
+        String targetName (replacePreprocessorTokens (config, config.getTargetBinaryNameString()));
 
         if (projectType.isStaticLibrary() || projectType.isDynamicLibrary())
             targetName = getLibbedFilename (targetName);
@@ -244,7 +275,9 @@ private:
         else
             out << "  BLDCMD = $(CXX) -o $(OUTDIR)/$(TARGET) $(OBJECTS) $(LDFLAGS) $(RESOURCES) $(TARGET_ARCH)" << newLine;
 
-        out << "endif" << newLine << newLine;
+        out << "  CLEANCMD = rm -rf $(OUTDIR)/$(TARGET) $(OBJDIR)" << newLine
+            << "endif" << newLine
+            << newLine;
     }
 
     void writeObjects (OutputStream& out, const Array<RelativePath>& files) const
@@ -281,7 +314,7 @@ private:
         out << ".PHONY: clean" << newLine
             << newLine;
 
-        out << "$(OUTDIR)/$(TARGET): $(OBJECTS) $(LDDEPS) $(RESOURCES)" << newLine
+        out << "$(OUTDIR)/$(TARGET): $(OBJECTS) $(RESOURCES)" << newLine
             << "\t@echo Linking " << projectName << newLine
             << "\t-@mkdir -p $(BINDIR)" << newLine
             << "\t-@mkdir -p $(LIBDIR)" << newLine
@@ -291,9 +324,7 @@ private:
 
         out << "clean:" << newLine
             << "\t@echo Cleaning " << projectName << newLine
-            << "\t-@rm -f $(OUTDIR)/$(TARGET)" << newLine
-            << "\t-@rm -rf $(OBJDIR)/*" << newLine
-            << "\t-@rm -rf $(OBJDIR)" << newLine
+            << "\t@$(CLEANCMD)" << newLine
             << newLine;
 
         out << "strip:" << newLine
@@ -311,8 +342,8 @@ private:
                     << ": " << escapeSpaces (files.getReference(i).toUnixStyle()) << newLine
                     << "\t-@mkdir -p $(OBJDIR)" << newLine
                     << "\t@echo \"Compiling " << files.getReference(i).getFileName() << "\"" << newLine
-                    << (files.getReference(i).hasFileExtension (".c") ? "\t@$(CC) $(CFLAGS) -o \"$@\" -c \"$<\""
-                                                                      : "\t@$(CXX) $(CXXFLAGS) -o \"$@\" -c \"$<\"")
+                    << (files.getReference(i).hasFileExtension ("c;s;S") ? "\t@$(CC) $(CFLAGS) -o \"$@\" -c \"$<\""
+                                                                         : "\t@$(CXX) $(CXXFLAGS) -o \"$@\" -c \"$<\"")
                     << newLine << newLine;
             }
         }
@@ -323,8 +354,8 @@ private:
     String getArchFlags (const BuildConfiguration& config) const
     {
         if (const MakeBuildConfiguration* makeConfig = dynamic_cast<const MakeBuildConfiguration*> (&config))
-            if (makeConfig->getArchitectureTypeString().isNotEmpty())
-                return makeConfig->getArchitectureTypeString();
+            if (! makeConfig->getArchitectureTypeVar().isVoid())
+                return makeConfig->getArchitectureTypeVar();
 
         return "-march=native";
     }
@@ -333,6 +364,17 @@ private:
     {
         return file.getFileNameWithoutExtension()
                 + "_" + String::toHexString (file.toUnixStyle().hashCode()) + ".o";
+    }
+
+    void initialiseDependencyPathValues()
+    {
+        vst2Path.referTo (Value (new DependencyPathValueSource (getSetting (Ids::vstFolder),
+                                                                Ids::vst2Path,
+                                                                TargetOS::linux)));
+
+        vst3Path.referTo (Value (new DependencyPathValueSource (getSetting (Ids::vst3Folder),
+                                                                Ids::vst3Path,
+                                                                TargetOS::linux)));
     }
 
     JUCE_DECLARE_NON_COPYABLE (MakefileProjectExporter)

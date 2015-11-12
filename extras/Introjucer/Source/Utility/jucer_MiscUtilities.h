@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -23,6 +23,11 @@
 */
 
 //==============================================================================
+
+#ifndef JUCER_MISCUTILITIES_H_INCLUDED
+#define JUCER_MISCUTILITIES_H_INCLUDED
+
+
 String hexString8Digits (int value);
 
 String createAlphaNumericUID();
@@ -37,6 +42,7 @@ String createGCCPreprocessorFlags (const StringPairArray& defs);
 String replacePreprocessorDefs (const StringPairArray& definitions, String sourceString);
 
 StringArray getSearchPathsFromString (const String& searchPath);
+StringArray getCommaOrWhitespaceSeparatedItems (const String&);
 
 void setValueIfVoid (Value value, const var& defaultValue);
 
@@ -44,15 +50,20 @@ void addPlistDictionaryKey (XmlElement* xml, const String& key, const String& va
 void addPlistDictionaryKeyBool (XmlElement* xml, const String& key, bool value);
 void addPlistDictionaryKeyInt (XmlElement* xml, const String& key, int value);
 
+bool fileNeedsCppSyntaxHighlighting (const File& file);
+
 //==============================================================================
 int indexOfLineStartingWith (const StringArray& lines, const String& text, int startIndex);
 
 void autoScrollForMouseEvent (const MouseEvent& e, bool scrollX = true, bool scrollY = true);
 
 void showUTF8ToolWindow (ScopedPointer<Component>& ownerPointer);
+void showSVGPathDataToolWindow (ScopedPointer<Component>& ownerPointer);
 
 bool cancelAnyModalComponents();
 bool reinvokeCommandAfterCancellingModalComps (const ApplicationCommandTarget::InvocationInfo&);
+
+StringArray getCleanedStringArray (StringArray);
 
 //==============================================================================
 class RolloverHelpComp   : public Component,
@@ -118,7 +129,7 @@ public:
         sourceValue.addListener (this);
     }
 
-    void valueChanged (Value&)      { sendChangeMessage (true); }
+    void valueChanged (Value&) override      { sendChangeMessage (true); }
 
 protected:
     Value sourceValue;
@@ -162,7 +173,7 @@ public:
         getGlobalProperties().setValue (windowPosProperty, getWindowStateAsString());
     }
 
-    void closeButtonPressed()
+    void closeButtonPressed() override
     {
         owner = nullptr;
     }
@@ -188,14 +199,14 @@ public:
           colourValue (colour),
           defaultColour (defaultCol)
     {
-        addAndMakeVisible (&selector);
+        addAndMakeVisible (selector);
         selector.setName ("Colour");
         selector.setCurrentColour (getColour());
         selector.addChangeListener (this);
 
         if (canResetToDefault)
         {
-            addAndMakeVisible (&defaultButton);
+            addAndMakeVisible (defaultButton);
             defaultButton.addListener (this);
         }
 
@@ -203,7 +214,7 @@ public:
         setSize (300, 400);
     }
 
-    void resized()
+    void resized() override
     {
         if (defaultButton.isVisible())
         {
@@ -230,25 +241,25 @@ public:
         if (getColour() != newColour)
         {
             if (newColour == defaultColour && defaultButton.isVisible())
-                colourValue = var::null;
+                colourValue = var();
             else
                 colourValue = newColour.toDisplayString (true);
         }
     }
 
-    void buttonClicked (Button*)
+    void buttonClicked (Button*) override
     {
         setColour (defaultColour);
         selector.setCurrentColour (defaultColour);
     }
 
-    void changeListenerCallback (ChangeBroadcaster*)
+    void changeListenerCallback (ChangeBroadcaster*) override
     {
         if (selector.getCurrentColour() != getColour())
             setColour (selector.getCurrentColour());
     }
 
-    void valueChanged (Value&)
+    void valueChanged (Value&) override
     {
         selector.setCurrentColour (getColour());
     }
@@ -277,7 +288,7 @@ public:
         colourValue.addListener (this);
     }
 
-    void paint (Graphics& g)
+    void paint (Graphics& g) override
     {
         const Colour colour (getColour());
 
@@ -328,7 +339,7 @@ public:
         }
     }
 
-    void mouseDown (const MouseEvent&)
+    void mouseDown (const MouseEvent&) override
     {
         if (undoManager != nullptr)
             undoManager->beginNewTransaction();
@@ -339,7 +350,7 @@ public:
                                           getScreenBounds(), nullptr);
     }
 
-    void valueChanged (Value&)
+    void valueChanged (Value&) override
     {
         refresh();
     }
@@ -363,16 +374,134 @@ public:
         : PropertyComponent (name),
           colourEditor (undoManager, colour, defaultColour, canResetToDefault)
     {
-        addAndMakeVisible (&colourEditor);
+        addAndMakeVisible (colourEditor);
     }
 
-    void resized()
+    void resized() override
     {
         colourEditor.setBounds (getLookAndFeel().getPropertyComponentContentPosition (*this));
     }
 
-    void refresh() {}
+    void refresh() override {}
 
 protected:
     ColourEditorComponent colourEditor;
 };
+
+//==============================================================================
+class FilePathPropertyComponent :    public PropertyComponent
+{
+public:
+    /** A Property Component for selecting files or folders.
+
+        The user may drag files over the property box, enter the path
+        manually and/or click the '...' button to open a file selection
+        dialog box
+    */
+    FilePathPropertyComponent (Value valueToControl,
+                               const String& propertyDescription,
+                               bool isDirectory,
+                               const String& wildcards = "*",
+                               const File& rootToUseForRelativePaths = File::nonexistent)
+        : PropertyComponent (propertyDescription),
+          innerComp (valueToControl, isDirectory, wildcards, rootToUseForRelativePaths)
+    {
+        addAndMakeVisible (innerComp);
+    }
+
+    void refresh() override {} // N/A
+
+private:
+    struct InnerComponent   : public Component,
+                              public FileDragAndDropTarget,
+                              private Button::Listener
+    {
+        InnerComponent (Value v, bool isDir, const String& wc, const File& rt)
+            : value (v),
+              isDirectory (isDir),
+              highlightForDragAndDrop (false),
+              wildcards (wc),
+              root (rt),
+              button ("...")
+        {
+            addAndMakeVisible (textbox);
+            textbox.getTextValue().referTo (value);
+
+            addAndMakeVisible (button);
+            button.addListener (this);
+        }
+
+        void paintOverChildren (Graphics& g) override
+        {
+            if (highlightForDragAndDrop)
+            {
+                g.setColour (Colours::green.withAlpha (0.1f));
+                g.fillRect (getLocalBounds());
+            }
+        }
+
+        void resized() override
+        {
+            juce::Rectangle<int> r (getLocalBounds());
+
+            button.setBounds (r.removeFromRight (24));
+            textbox.setBounds (r);
+        }
+
+        bool isInterestedInFileDrag (const StringArray&) override   { return true; }
+        void fileDragEnter (const StringArray&, int, int) override  { highlightForDragAndDrop = true;  repaint(); }
+        void fileDragExit (const StringArray&) override             { highlightForDragAndDrop = false; repaint(); }
+
+        void filesDropped (const StringArray& files, int, int) override
+        {
+            const File firstFile (files[0]);
+
+            if (isDirectory)
+                setTo (firstFile.isDirectory() ? firstFile
+                                               : firstFile.getParentDirectory());
+            else
+                setTo (firstFile);
+        }
+
+        void buttonClicked (Button*) override
+        {
+            const File currentFile (root.getChildFile (value.toString()));
+
+            if (isDirectory)
+            {
+                FileChooser chooser ("Select directory", currentFile);
+
+                if (chooser.browseForDirectory())
+                    setTo (chooser.getResult());
+            }
+            else
+            {
+                FileChooser chooser ("Select file", currentFile, wildcards);
+
+                if (chooser.browseForFileToOpen())
+                    setTo (chooser.getResult());
+            }
+        }
+
+        void setTo (const File& f)
+        {
+            value = (root == File::nonexistent) ? f.getFullPathName()
+                                                : f.getRelativePathFrom (root);
+        }
+
+        Value value;
+        bool isDirectory, highlightForDragAndDrop;
+        String wildcards;
+        File root;
+        TextEditor textbox;
+        TextButton button;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (InnerComponent)
+    };
+
+    InnerComponent innerComp;  // Used so that the PropertyComponent auto first-child positioning works
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FilePathPropertyComponent)
+};
+
+#endif // JUCER_MISCUTILITIES_H_INCLUDED

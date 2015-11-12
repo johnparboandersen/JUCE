@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -84,28 +84,9 @@ Font JucerTreeViewBase::getFont() const
     return Font (getItemHeight() * 0.6f);
 }
 
-void JucerTreeViewBase::paintItem (Graphics& g, int /*width*/, int /*height*/)
+void JucerTreeViewBase::paintOpenCloseButton (Graphics& g, const Rectangle<float>& area, Colour /*backgroundColour*/, bool isMouseOver)
 {
-    if (isSelected())
-        g.fillAll (getOwnerView()->findColour (treeviewHighlightColourId));
-}
-
-float JucerTreeViewBase::getIconSize() const
-{
-    return jmin (getItemHeight() - 4.0f, 18.0f);
-}
-
-void JucerTreeViewBase::paintOpenCloseButton (Graphics& g, int width, int height, bool /*isMouseOver*/)
-{
-    Path p;
-
-    if (isOpen())
-        p.addTriangle (width * 0.2f,  height * 0.25f, width * 0.8f, height * 0.25f, width * 0.5f, height * 0.75f);
-    else
-        p.addTriangle (width * 0.25f, height * 0.25f, width * 0.8f, height * 0.5f,  width * 0.25f, height * 0.75f);
-
-    g.setColour (getOwnerView()->findColour (mainBackgroundColourId).contrasting (0.3f));
-    g.fillPath (p);
+    TreeViewItem::paintOpenCloseButton (g, area, getOwnerView()->findColour (mainBackgroundColourId), isMouseOver);
 }
 
 Colour JucerTreeViewBase::getBackgroundColour() const
@@ -113,7 +94,7 @@ Colour JucerTreeViewBase::getBackgroundColour() const
     Colour background (getOwnerView()->findColour (mainBackgroundColourId));
 
     if (isSelected())
-        background = background.overlaidWith (getOwnerView()->findColour (treeviewHighlightColourId));
+        background = background.overlaidWith (getOwnerView()->findColour (TreeView::selectedItemBackgroundColourId));
 
     return background;
 }
@@ -158,7 +139,7 @@ public:
         ed.setText (item.getRenamingName());
         ed.setBounds (bounds);
 
-        parent.addAndMakeVisible (&ed);
+        parent.addAndMakeVisible (ed);
         ed.enterModalState (true, this);
     }
 
@@ -202,6 +183,10 @@ void JucerTreeViewBase::itemClicked (const MouseEvent& e)
             showMultiSelectionPopupMenu();
         else
             showPopupMenu();
+    }
+    else if (isSelected())
+    {
+        itemSelectionChanged (true);
     }
 }
 

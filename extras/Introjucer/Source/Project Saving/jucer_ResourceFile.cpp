@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -38,23 +38,6 @@ ResourceFile::ResourceFile (Project& p)
 
 ResourceFile::~ResourceFile()
 {
-}
-
-bool ResourceFile::isResourceFile (const File& file)
-{
-    if (file.hasFileExtension ("cpp;cc;h"))
-    {
-        ScopedPointer <InputStream> in (file.createInputStream());
-
-        if (in != nullptr)
-        {
-            MemoryBlock mb;
-            in->readIntoMemoryBlock (mb, 256);
-            return mb.toString().contains (resourceFileIdentifierString);
-        }
-    }
-
-    return false;
 }
 
 //==============================================================================
@@ -126,10 +109,15 @@ static String getComment()
     return comment;
 }
 
-bool ResourceFile::writeHeader (MemoryOutputStream& header)
+Result ResourceFile::writeHeader (MemoryOutputStream& header)
 {
+    const String headerGuard ("BINARYDATA_H_" + String (project.getProjectUID().hashCode() & 0x7ffffff) + "_INCLUDED");
+
     header << "/* ========================================================================================="
            << getComment()
+           << "#ifndef " << headerGuard << newLine
+           << "#define " << headerGuard << newLine
+           << newLine
            << "namespace " << className << newLine
            << "{" << newLine;
 
@@ -138,6 +126,10 @@ bool ResourceFile::writeHeader (MemoryOutputStream& header)
     for (int i = 0; i < files.size(); ++i)
     {
         const File& file = files.getReference(i);
+
+        if (! file.existsAsFile())
+            return Result::fail ("Can't open resource file: " + file.getFullPathName());
+
         const int64 dataSize = file.getSize();
 
         const String variableName (variableNames[i]);
@@ -158,17 +150,19 @@ bool ResourceFile::writeHeader (MemoryOutputStream& header)
            << "    extern const char* namedResourceList[];" << newLine
            << newLine
            << "    // Number of elements in the namedResourceList array." << newLine
-           << "    extern const int namedResourceListSize;" << newLine
+           << "    const int namedResourceListSize = " << files.size() <<  ";" << newLine
            << newLine
            << "    // If you provide the name of one of the binary resource variables above, this function will" << newLine
            << "    // return the corresponding data and its size (or a null pointer if the name isn't found)." << newLine
            << "    const char* getNamedResource (const char* resourceNameUTF8, int& dataSizeInBytes) throw();" << newLine
-           << "}" << newLine;
+           << "}" << newLine
+           << newLine
+           << "#endif" << newLine;
 
-    return true;
+    return Result::ok();
 }
 
-bool ResourceFile::writeCpp (MemoryOutputStream& cpp, const File& headerFile, int& i, const int maxFileSize)
+Result ResourceFile::writeCpp (MemoryOutputStream& cpp, const File& headerFile, int& i, const int maxFileSize)
 {
     const bool isFirstFile = (i == 0);
 
@@ -245,8 +239,6 @@ bool ResourceFile::writeCpp (MemoryOutputStream& cpp, const File& headerFile, in
             << "    return 0;" << newLine
             << "}" << newLine
             << newLine
-            << "const int namedResourceListSize = " << files.size() <<  ";" << newLine
-            << newLine
             << "const char* namedResourceList[] =" << newLine
             << "{" << newLine;
 
@@ -259,17 +251,22 @@ bool ResourceFile::writeCpp (MemoryOutputStream& cpp, const File& headerFile, in
     cpp << newLine
         << "}" << newLine;
 
-    return true;
+    return Result::ok();
 }
 
-bool ResourceFile::write (Array<File>& filesCreated, const int maxFileSize)
+Result ResourceFile::write (Array<File>& filesCreated, const int maxFileSize)
 {
     const File headerFile (project.getBinaryDataHeaderFile());
 
     {
         MemoryOutputStream mo;
-        if (! (writeHeader (mo) && FileHelpers::overwriteFileWithNewDataIfDifferent (headerFile, mo)))
-            return false;
+        Result r (writeHeader (mo));
+
+        if (r.failed())
+            return r;
+
+        if (! FileHelpers::overwriteFileWithNewDataIfDifferent (headerFile, mo))
+            return Result::fail ("Can't write to file: " + headerFile.getFullPathName());
 
         filesCreated.add (headerFile);
     }
@@ -282,8 +279,14 @@ bool ResourceFile::write (Array<File>& filesCreated, const int maxFileSize)
         File cpp (project.getBinaryDataCppFile (fileIndex));
 
         MemoryOutputStream mo;
-        if (! (writeCpp (mo, headerFile, i, maxFileSize) && FileHelpers::overwriteFileWithNewDataIfDifferent (cpp, mo)))
-            return false;
+
+        Result r (writeCpp (mo, headerFile, i, maxFileSize));
+
+        if (r.failed())
+            return r;
+
+        if (! FileHelpers::overwriteFileWithNewDataIfDifferent (cpp, mo))
+            return Result::fail ("Can't write to file: " + cpp.getFullPathName());
 
         filesCreated.add (cpp);
         ++fileIndex;
@@ -292,5 +295,5 @@ bool ResourceFile::write (Array<File>& filesCreated, const int maxFileSize)
             break;
     }
 
-    return true;
+    return Result::ok();
 }

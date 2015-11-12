@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -350,11 +350,13 @@ void MidiFile::convertTimestampTicksToSeconds()
 }
 
 //==============================================================================
-bool MidiFile::writeTo (OutputStream& out)
+bool MidiFile::writeTo (OutputStream& out, int midiFileType)
 {
+    jassert (midiFileType >= 0 && midiFileType <= 2);
+
     out.writeIntBigEndian ((int) ByteOrder::bigEndianInt ("MThd"));
     out.writeIntBigEndian (6);
-    out.writeShortBigEndian (1); // type
+    out.writeShortBigEndian ((short) midiFileType);
     out.writeShortBigEndian ((short) tracks.size());
     out.writeShortBigEndian (timeFormat);
 
@@ -372,46 +374,48 @@ void MidiFile::writeTrack (OutputStream& mainOut, const int trackNum)
 
     int lastTick = 0;
     uint8 lastStatusByte = 0;
+    bool endOfTrackEventWritten = false;
 
     for (int i = 0; i < ms.getNumEvents(); ++i)
     {
         const MidiMessage& mm = ms.getEventPointer(i)->message;
 
-        if (! mm.isEndOfTrackMetaEvent())
+        if (mm.isEndOfTrackMetaEvent())
+            endOfTrackEventWritten = true;
+
+        const int tick = roundToInt (mm.getTimeStamp());
+        const int delta = jmax (0, tick - lastTick);
+        MidiFileHelpers::writeVariableLengthInt (out, (uint32) delta);
+        lastTick = tick;
+
+        const uint8* data = mm.getRawData();
+        int dataSize = mm.getRawDataSize();
+
+        const uint8 statusByte = data[0];
+
+        if (statusByte == lastStatusByte
+             && (statusByte & 0xf0) != 0xf0
+             && dataSize > 1
+             && i > 0)
         {
-            const int tick = roundToInt (mm.getTimeStamp());
-            const int delta = jmax (0, tick - lastTick);
-            MidiFileHelpers::writeVariableLengthInt (out, (uint32) delta);
-            lastTick = tick;
-
-            const uint8* data = mm.getRawData();
-            int dataSize = mm.getRawDataSize();
-
-            const uint8 statusByte = data[0];
-
-            if (statusByte == lastStatusByte
-                 && (statusByte & 0xf0) != 0xf0
-                 && dataSize > 1
-                 && i > 0)
-            {
-                ++data;
-                --dataSize;
-            }
-            else if (statusByte == 0xf0)  // Write sysex message with length bytes.
-            {
-                out.writeByte ((char) statusByte);
-
-                ++data;
-                --dataSize;
-
-                MidiFileHelpers::writeVariableLengthInt (out, (uint32) dataSize);
-            }
-
-            out.write (data, (size_t) dataSize);
-            lastStatusByte = statusByte;
+            ++data;
+            --dataSize;
         }
+        else if (statusByte == 0xf0)  // Write sysex message with length bytes.
+        {
+            out.writeByte ((char) statusByte);
+
+            ++data;
+            --dataSize;
+
+            MidiFileHelpers::writeVariableLengthInt (out, (uint32) dataSize);
+        }
+
+        out.write (data, (size_t) dataSize);
+        lastStatusByte = statusByte;
     }
 
+    if (! endOfTrackEventWritten)
     {
         out.writeByte (0); // (tick delta)
         const MidiMessage m (MidiMessage::endOfTrack());

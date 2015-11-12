@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the juce_core module of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission to use, copy, modify, and/or distribute this software for any purpose with
    or without fee is hereby granted, provided that the above copyright notice and this
@@ -40,9 +40,9 @@
     do so, the class must fulfil these requirements:
     - it must have a copy constructor and assignment operator
     - it must be able to be relocated in memory by a memcpy without this causing any problems - so
-      objects whose functionality relies on external pointers or references to themselves can be used.
+      objects whose functionality relies on external pointers or references to themselves can not be used.
 
-    You can of course have an array of pointers to any kind of object, e.g. Array <MyClass*>, but if
+    You can of course have an array of pointers to any kind of object, e.g. Array<MyClass*>, but if
     you do this, the array doesn't take any ownership of the objects - see the OwnedArray class or the
     ReferenceCountedArray class for more powerful ways of holding lists of objects.
 
@@ -65,8 +65,7 @@ private:
 public:
     //==============================================================================
     /** Creates an empty array. */
-    Array() noexcept
-       : numUsed (0)
+    Array() noexcept   : numUsed (0)
     {
     }
 
@@ -85,7 +84,7 @@ public:
 
    #if JUCE_COMPILER_SUPPORTS_MOVE_SEMANTICS
     Array (Array<ElementType, TypeOfCriticalSectionToUse>&& other) noexcept
-        : data (static_cast <ArrayAllocationBase<ElementType, TypeOfCriticalSectionToUse>&&> (other.data)),
+        : data (static_cast<ArrayAllocationBase<ElementType, TypeOfCriticalSectionToUse>&&> (other.data)),
           numUsed (other.numUsed)
     {
         other.numUsed = 0;
@@ -97,8 +96,7 @@ public:
         @param values   the array to copy from
     */
     template <typename TypeToCreateFrom>
-    explicit Array (const TypeToCreateFrom* values)
-       : numUsed (0)
+    explicit Array (const TypeToCreateFrom* values)  : numUsed (0)
     {
         while (*values != TypeToCreateFrom())
             add (*values++);
@@ -110,14 +108,21 @@ public:
         @param numValues    the number of values in the array
     */
     template <typename TypeToCreateFrom>
-    Array (const TypeToCreateFrom* values, int numValues)
-       : numUsed (numValues)
+    Array (const TypeToCreateFrom* values, int numValues)  : numUsed (numValues)
     {
         data.setAllocatedSize (numValues);
 
         for (int i = 0; i < numValues; ++i)
             new (data.elements + i) ElementType (values[i]);
     }
+
+   #if JUCE_COMPILER_SUPPORTS_INITIALIZER_LISTS
+    template <typename TypeToCreateFrom>
+    Array (const std::initializer_list<TypeToCreateFrom>& items)  : numUsed (0)
+    {
+        addArray (items);
+    }
+   #endif
 
     /** Destructor. */
     ~Array()
@@ -143,7 +148,8 @@ public:
     Array& operator= (Array&& other) noexcept
     {
         const ScopedLockType lock (getLock());
-        data = static_cast <ArrayAllocationBase<ElementType, TypeOfCriticalSectionToUse>&&> (other.data);
+        deleteAllElements();
+        data = static_cast<ArrayAllocationBase<ElementType, TypeOfCriticalSectionToUse>&&> (other.data);
         numUsed = other.numUsed;
         other.numUsed = 0;
         return *this;
@@ -210,11 +216,16 @@ public:
     }
 
     //==============================================================================
-    /** Returns the current number of elements in the array.
-    */
+    /** Returns the current number of elements in the array. */
     inline int size() const noexcept
     {
         return numUsed;
+    }
+
+    /** Returns true if the array is empty, false otherwise. */
+    inline bool empty() const noexcept
+    {
+        return size() == 0;
     }
 
     /** Returns one of the elements in the array.
@@ -279,7 +290,14 @@ public:
     inline ElementType getFirst() const
     {
         const ScopedLockType lock (getLock());
-        return numUsed > 0 ? data.elements[0] : ElementType();
+
+        if (numUsed > 0)
+        {
+            jassert (data.elements != nullptr);
+            return data.elements[0];
+        }
+
+        return ElementType();
     }
 
     /** Returns the last element in the array, or a default value if the array is empty.
@@ -289,7 +307,14 @@ public:
     inline ElementType getLast() const
     {
         const ScopedLockType lock (getLock());
-        return numUsed > 0 ? data.elements[numUsed - 1] : ElementType();
+
+        if (numUsed > 0)
+        {
+            jassert (data.elements != nullptr);
+            return data.elements[numUsed - 1];
+        }
+
+        return ElementType();
     }
 
     /** Returns a pointer to the actual array data.
@@ -369,12 +394,26 @@ public:
         @param newElement       the new object to add to the array
         @see set, insert, addIfNotAlreadyThere, addSorted, addUsingDefaultSort, addArray
     */
-    void add (ParameterType newElement)
+    void add (const ElementType& newElement)
     {
         const ScopedLockType lock (getLock());
         data.ensureAllocatedSize (numUsed + 1);
         new (data.elements + numUsed++) ElementType (newElement);
     }
+
+   #if JUCE_COMPILER_SUPPORTS_MOVE_SEMANTICS
+    /** Appends a new element at the end of the array.
+
+        @param newElement       the new object to add to the array
+        @see set, insert, addIfNotAlreadyThere, addSorted, addUsingDefaultSort, addArray
+    */
+    void add (ElementType&& newElement)
+    {
+        const ScopedLockType lock (getLock());
+        data.ensureAllocatedSize (numUsed + 1);
+        new (data.elements + numUsed++) ElementType (static_cast<ElementType&&> (newElement));
+    }
+   #endif
 
     /** Inserts a new element into the array at a given position.
 
@@ -446,7 +485,11 @@ public:
             numUsed += numberOfTimesToInsertIt;
 
             while (--numberOfTimesToInsertIt >= 0)
-                new (insertPos++) ElementType (newElement);
+            {
+                new (insertPos) ElementType (newElement);
+                ++insertPos; // NB: this increment is done separately from the
+                             // new statement to avoid a compiler bug in VS2014
+            }
         }
     }
 
@@ -571,6 +614,21 @@ public:
             }
         }
     }
+
+   #if JUCE_COMPILER_SUPPORTS_INITIALIZER_LISTS
+    template <typename TypeToCreateFrom>
+    void addArray (const std::initializer_list<TypeToCreateFrom>& items)
+    {
+        const ScopedLockType lock (getLock());
+        data.ensureAllocatedSize (numUsed + (int) items.size());
+
+        for (auto& item : items)
+        {
+            new (data.elements + numUsed) ElementType (item);
+            ++numUsed;
+        }
+    }
+   #endif
 
     /** Adds elements from a null-terminated array of pointers to the end of this array.
 
@@ -779,8 +837,8 @@ public:
 
     /** Removes an item from the array.
 
-        This will remove the first occurrence of the given element from the array.
-        If the item isn't found, no action is taken.
+        This will remove all occurrences of the given element from the array.
+        If no such items are found, no action is taken.
 
         @param valueToRemove   the object to try to remove
         @see remove, removeRange

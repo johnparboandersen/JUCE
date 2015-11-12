@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_PAINTELEMENTTEXT_JUCEHEADER__
-#define __JUCER_PAINTELEMENTTEXT_JUCEHEADER__
+#ifndef JUCER_PAINTELEMENTTEXT_H_INCLUDED
+#define JUCER_PAINTELEMENTTEXT_H_INCLUDED
 
 #include "jucer_ColouredElement.h"
 #include "../properties/jucer_FontPropertyComponent.h"
@@ -34,8 +34,8 @@
 class PaintElementText   : public ColouredElement
 {
 public:
-    PaintElementText (PaintRoutine* owner)
-        : ColouredElement (owner, "Text", false, false),
+    PaintElementText (PaintRoutine* pr)
+        : ColouredElement (pr, "Text", false, false),
           text ("Your text goes here"),
           font (15.0f),
           typefaceName (FontPropertyComponent::getDefaultFont()),
@@ -65,16 +65,16 @@ public:
         return s;
     }
 
-    void getEditableProperties (Array <PropertyComponent*>& properties)
+    void getEditableProperties (Array<PropertyComponent*>& props)
     {
-        ColouredElement::getEditableProperties (properties);
+        ColouredElement::getEditableProperties (props);
 
-        properties.add (new TextProperty (this));
-        properties.add (new FontNameProperty (this));
-        properties.add (new FontStyleProperty (this));
-        properties.add (new FontSizeProperty (this));
-        properties.add (new TextJustificationProperty (this));
-        properties.add (new TextToPathProperty (this));
+        props.add (new TextProperty (this));
+        props.add (new FontNameProperty (this));
+        props.add (new FontStyleProperty (this));
+        props.add (new FontSizeProperty (this));
+        props.add (new TextJustificationProperty (this));
+        props.add (new TextToPathProperty (this));
     }
 
     void fillInGeneratedCode (GeneratedCode& code, String& paintMethodCode)
@@ -91,7 +91,7 @@ public:
             r << "g.setFont ("
               << FontPropertyComponent::getCompleteFontCode (font, typefaceName)
               << ");\ng.drawText ("
-              << quotedString (text)
+              << quotedString (text, code.shouldUseTransMacro())
               << ",\n            "
               << x << ", " << y << ", " << w << ", " << h
               << ",\n            "
@@ -331,24 +331,33 @@ public:
 
     void convertToPath()
     {
-        font = FontPropertyComponent::applyNameToFont (typefaceName, font);
+        if (PaintRoutineEditor* parent = dynamic_cast<PaintRoutineEditor*> (getParentComponent()))
+        {
 
-        const Rectangle<int> r (getCurrentAbsoluteBounds());
+            font = FontPropertyComponent::applyNameToFont (typefaceName, font);
 
-        GlyphArrangement arr;
-        arr.addCurtailedLineOfText (font, text,
-                                    0.0f, 0.0f, (float) r.getWidth(),
-                                    true);
+            const Rectangle<int> r =
+                getCurrentBounds (parent->getComponentArea().withZeroOrigin());
 
-        arr.justifyGlyphs (0, arr.getNumGlyphs(),
-                           (float) r.getX(), (float) r.getY(),
-                           (float) r.getWidth(), (float) r.getHeight(),
-                           justification);
+            GlyphArrangement arr;
+            arr.addCurtailedLineOfText (font, text,
+                                        0.0f, 0.0f, (float) r.getWidth(),
+                                        true);
 
-        Path path;
-        arr.createPath (path);
+            arr.justifyGlyphs (0, arr.getNumGlyphs(),
+                               (float) r.getX(), (float) r.getY(),
+                               (float) r.getWidth(), (float) r.getHeight(),
+                               justification);
 
-        convertToNewPathElement (path);
+            Path path;
+            arr.createPath (path);
+
+            convertToNewPathElement (path);
+        }
+        else
+        {
+            jassertfalse;
+        }
     }
 
 private:
@@ -376,10 +385,10 @@ private:
             element->getDocument()->removeChangeListener (this);
         }
 
-        void setText (const String& newText)    { element->setText (newText, true); }
-        String getText() const                  { return element->getText(); }
+        void setText (const String& newText) override    { element->setText (newText, true); }
+        String getText() const override                  { return element->getText(); }
 
-        void changeListenerCallback (ChangeBroadcaster*)     { refresh(); }
+        void changeListenerCallback (ChangeBroadcaster*) override     { refresh(); }
 
     private:
         PaintElementText* const element;
@@ -558,4 +567,4 @@ private:
 };
 
 
-#endif   // __JUCER_PAINTELEMENTTEXT_JUCEHEADER__
+#endif   // JUCER_PAINTELEMENTTEXT_H_INCLUDED

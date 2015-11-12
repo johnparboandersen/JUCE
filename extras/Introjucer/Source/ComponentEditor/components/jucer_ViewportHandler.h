@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -74,32 +74,32 @@ public:
         return true;
     }
 
-    void getEditableProperties (Component* component, JucerDocument& document, Array <PropertyComponent*>& properties)
+    void getEditableProperties (Component* component, JucerDocument& document, Array<PropertyComponent*>& props)
     {
-        ComponentTypeHandler::getEditableProperties (component, document, properties);
+        ComponentTypeHandler::getEditableProperties (component, document, props);
 
         Viewport* const v = dynamic_cast <Viewport*> (component);
 
-        properties.add (new ViewportScrollbarShownProperty (v, document, true));
-        properties.add (new ViewportScrollbarShownProperty (v, document, false));
-        properties.add (new ViewportScrollbarSizeProperty (v, document));
-        properties.add (new ViewportContentTypeProperty (v, document));
+        props.add (new ViewportScrollbarShownProperty (v, document, true));
+        props.add (new ViewportScrollbarShownProperty (v, document, false));
+        props.add (new ViewportScrollbarSizeProperty (v, document));
+        props.add (new ViewportContentTypeProperty (v, document));
 
         if (getViewportContentType (v) == 1)
         {
-            properties.add (new ViewportJucerFileProperty (v, document));
-            properties.add (new ConstructorParamsProperty (v, document));
+            props.add (new ViewportJucerFileProperty (v, document));
+            props.add (new ConstructorParamsProperty (v, document));
         }
         else if (getViewportContentType (v) == 2)
         {
-            properties.add (new ViewportContentClassProperty (v, document));
-            properties.add (new ConstructorParamsProperty (v, document));
+            props.add (new ViewportContentClassProperty (v, document));
+            props.add (new ConstructorParamsProperty (v, document));
         }
     }
 
-    String getCreationParameters (Component* comp)
+    String getCreationParameters (GeneratedCode&, Component* comp)
     {
-        return quotedString (comp->getName());
+        return quotedString (comp->getName(), false);
     }
 
     void fillInCreationCode (GeneratedCode& code, Component* component, const String& memberVariableName)
@@ -127,7 +127,7 @@ public:
 
         if (getViewportContentType (v) != 0)
         {
-            String className (getViewportGenericComponentClass (v));
+            String classNm (getViewportGenericComponentClass (v));
 
             if (getViewportContentType (v) == 1)
             {
@@ -146,19 +146,19 @@ public:
                                                 .getRelativePathFrom (code.document->getCppFile().getParentDirectory())
                                                 .replaceCharacter ('\\', '/'));
 
-                    className = doc->getClassName();
+                    classNm = doc->getClassName();
                 }
                 else
                 {
-                    className = String::empty;
+                    classNm = String::empty;
                 }
             }
 
-            if (className.isNotEmpty())
+            if (classNm.isNotEmpty())
             {
                 code.constructorCode
                     << memberVariableName << "->setViewedComponent (new "
-                    << className;
+                    << classNm;
 
                 if (getViewportConstructorParams (v).trim().isNotEmpty())
                 {
@@ -286,10 +286,10 @@ private:
     class ViewportScrollbarShownProperty  : public ComponentBooleanProperty <Viewport>
     {
     public:
-        ViewportScrollbarShownProperty (Viewport* comp, JucerDocument& document, const bool vertical_)
+        ViewportScrollbarShownProperty (Viewport* comp, JucerDocument& doc, const bool vertical_)
             : ComponentBooleanProperty <Viewport> (vertical_ ? "V scrollbar" : "H scrollbar",
                                                    "enabled", "enabled",
-                                                   comp, document),
+                                                   comp, doc),
                vertical (vertical_)
         {
         }
@@ -312,8 +312,8 @@ private:
         class ViewportScrollbarChangeAction  : public ComponentUndoableAction <Viewport>
         {
         public:
-            ViewportScrollbarChangeAction (Viewport* const comp, ComponentLayout& layout, const bool vertical_, const bool newState_)
-                : ComponentUndoableAction <Viewport> (comp, layout),
+            ViewportScrollbarChangeAction (Viewport* const comp, ComponentLayout& l, const bool vertical_, const bool newState_)
+                : ComponentUndoableAction <Viewport> (comp, l),
                   vertical (vertical_),
                   newState (newState_)
             {
@@ -392,8 +392,8 @@ private:
         class ViewportScrollbarSizeChangeAction  : public ComponentUndoableAction <Viewport>
         {
         public:
-            ViewportScrollbarSizeChangeAction (Viewport* const comp, ComponentLayout& layout, const int newState_)
-                : ComponentUndoableAction <Viewport> (comp, layout),
+            ViewportScrollbarSizeChangeAction (Viewport* const comp, ComponentLayout& l, const int newState_)
+                : ComponentUndoableAction <Viewport> (comp, l),
                   newState (newState_)
             {
                 oldState = comp->getScrollBarThickness();
@@ -423,8 +423,8 @@ private:
     class ViewportContentTypeProperty  : public ComponentChoiceProperty <Viewport>
     {
     public:
-        ViewportContentTypeProperty (Viewport* comp, JucerDocument& document)
-            : ComponentChoiceProperty <Viewport> ("content", comp, document)
+        ViewportContentTypeProperty (Viewport* comp, JucerDocument& doc)
+            : ComponentChoiceProperty <Viewport> ("content", comp, doc)
         {
             choices.add ("No content component");
             choices.add ("Jucer content component");
@@ -446,8 +446,8 @@ private:
         class ViewportContentTypeChangeAction  : public ComponentUndoableAction <Viewport>
         {
         public:
-            ViewportContentTypeChangeAction (Viewport* const comp, ComponentLayout& layout, const int newValue_)
-                : ComponentUndoableAction <Viewport> (comp, layout),
+            ViewportContentTypeChangeAction (Viewport* const comp, ComponentLayout& l, const int newValue_)
+                : ComponentUndoableAction <Viewport> (comp, l),
                   newValue (newValue_)
             {
                 oldValue = getViewportContentType (comp);
@@ -498,7 +498,7 @@ private:
             document.perform (new JucerCompFileChangeAction (component, *document.getComponentLayout(),
                                                              newFile.getRelativePathFrom (document.getCppFile().getParentDirectory())
                                                                     .replaceCharacter ('\\', '/')),
-                              "Change Jucer component file");
+                              "Change Introjucer component file");
         }
 
         File getFile() const
@@ -523,8 +523,8 @@ private:
         class JucerCompFileChangeAction  : public ComponentUndoableAction <Viewport>
         {
         public:
-            JucerCompFileChangeAction (Viewport* const comp, ComponentLayout& layout, const String& newState_)
-                : ComponentUndoableAction <Viewport> (comp, layout),
+            JucerCompFileChangeAction (Viewport* const comp, ComponentLayout& l, const String& newState_)
+                : ComponentUndoableAction <Viewport> (comp, l),
                   newState (newState_)
             {
                 oldState = getViewportJucerComponentFile (comp);
@@ -554,18 +554,18 @@ private:
     class ViewportContentClassProperty   : public ComponentTextProperty <Viewport>
     {
     public:
-        ViewportContentClassProperty (Viewport* comp, JucerDocument& document)
-            : ComponentTextProperty <Viewport> ("content class", 256, false, comp, document)
+        ViewportContentClassProperty (Viewport* comp, JucerDocument& doc)
+            : ComponentTextProperty <Viewport> ("content class", 256, false, comp, doc)
         {
         }
 
-        void setText (const String& newText)
+        void setText (const String& newText) override
         {
             document.perform (new ViewportClassNameChangeAction (component, *document.getComponentLayout(), newText),
                               "Change Viewport content class");
         }
 
-        String getText() const
+        String getText() const override
         {
             return getViewportGenericComponentClass (component);
         }
@@ -574,8 +574,8 @@ private:
         class ViewportClassNameChangeAction  : public ComponentUndoableAction <Viewport>
         {
         public:
-            ViewportClassNameChangeAction (Viewport* const comp, ComponentLayout& layout, const String& newValue_)
-                : ComponentUndoableAction <Viewport> (comp, layout),
+            ViewportClassNameChangeAction (Viewport* const comp, ComponentLayout& l, const String& newValue_)
+                : ComponentUndoableAction <Viewport> (comp, l),
                   newValue (newValue_)
             {
                 oldValue = getViewportGenericComponentClass (comp);
@@ -607,18 +607,18 @@ private:
     class ConstructorParamsProperty   : public ComponentTextProperty <Viewport>
     {
     public:
-        ConstructorParamsProperty (Viewport* comp, JucerDocument& document)
-            : ComponentTextProperty <Viewport> ("constructor params", 512, false, comp, document)
+        ConstructorParamsProperty (Viewport* comp, JucerDocument& doc)
+            : ComponentTextProperty <Viewport> ("constructor params", 512, false, comp, doc)
         {
         }
 
-        void setText (const String& newText)
+        void setText (const String& newText) override
         {
             document.perform (new ConstructorParamChangeAction (component, *document.getComponentLayout(), newText),
                               "Change Viewport content constructor params");
         }
 
-        String getText() const
+        String getText() const override
         {
             return getViewportConstructorParams (component);
         }
@@ -627,8 +627,8 @@ private:
         class ConstructorParamChangeAction  : public ComponentUndoableAction <Viewport>
         {
         public:
-            ConstructorParamChangeAction (Viewport* const comp, ComponentLayout& layout, const String& newValue_)
-                : ComponentUndoableAction <Viewport> (comp, layout),
+            ConstructorParamChangeAction (Viewport* const comp, ComponentLayout& l, const String& newValue_)
+                : ComponentUndoableAction <Viewport> (comp, l),
                   newValue (newValue_)
             {
                 oldValue = getViewportConstructorParams (comp);

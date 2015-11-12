@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the juce_core module of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission to use, copy, modify, and/or distribute this software for any purpose with
    or without fee is hereby granted, provided that the above copyright notice and this
@@ -155,8 +155,8 @@ void PropertySet::removeValue (StringRef keyName)
 
 void PropertySet::setValue (const String& keyName, const XmlElement* const xml)
 {
-    setValue (keyName, xml == nullptr ? var::null
-                                      : var (xml->createDocument (String::empty, true)));
+    setValue (keyName, xml == nullptr ? var()
+                                      : var (xml->createDocument ("", true)));
 }
 
 bool PropertySet::containsKey (StringRef keyName) const noexcept

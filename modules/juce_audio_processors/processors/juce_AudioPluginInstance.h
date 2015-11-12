@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -32,6 +32,10 @@
 
     This derives from the AudioProcessor class, and adds some extra functionality
     that helps when wrapping dynamically loaded plugins.
+
+    This class is not needed when writing plugins, and you should never need to derive
+    your own sub-classes from it. The plugin hosting classes use it internally and will
+    return AudioPluginInstance objects which wrap external plugins.
 
     @see AudioProcessor, AudioPluginFormat
 */

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -151,9 +151,9 @@ XmlElement* ComponentTypeHandler::createXmlFor (Component* comp, const Component
     pos.updateFromComponent (*comp, layout);
     pos.applyToXml (*e);
 
-    SettableTooltipClient* const ttc = dynamic_cast <SettableTooltipClient*> (comp);
-    if (ttc != 0 && ttc->getTooltip().isNotEmpty())
-        e->setAttribute ("tooltip", ttc->getTooltip());
+    if (SettableTooltipClient* const ttc = dynamic_cast <SettableTooltipClient*> (comp))
+        if (ttc->getTooltip().isNotEmpty())
+            e->setAttribute ("tooltip", ttc->getTooltip());
 
     for (int i = 0; i < colours.size(); ++i)
     {
@@ -191,8 +191,7 @@ bool ComponentTypeHandler::restoreFromXml (const XmlElement& xml,
     jassert (layout != 0);
     setComponentPosition (comp, rpr, layout);
 
-    SettableTooltipClient* const ttc = dynamic_cast <SettableTooltipClient*> (comp);
-    if (ttc != 0)
+    if (SettableTooltipClient* const ttc = dynamic_cast <SettableTooltipClient*> (comp))
         ttc->setTooltip (xml.getStringAttribute ("tooltip"));
 
     for (int i = 0; i < colours.size(); ++i)
@@ -260,18 +259,18 @@ void ComponentTypeHandler::setComponentPosition (Component* comp,
 class TooltipProperty   : public ComponentTextProperty <Component>
 {
 public:
-    TooltipProperty (Component* comp, JucerDocument& document)
-        : ComponentTextProperty <Component> ("tooltip", 1024, false, comp, document)
+    TooltipProperty (Component* comp, JucerDocument& doc)
+        : ComponentTextProperty<Component> ("tooltip", 1024, true, comp, doc)
     {
     }
 
-    String getText() const
+    String getText() const override
     {
         SettableTooltipClient* ttc = dynamic_cast <SettableTooltipClient*> (component);
         return ttc->getTooltip();
     }
 
-    void setText (const String& newText)
+    void setText (const String& newText) override
     {
         document.perform (new SetTooltipAction (component, *document.getComponentLayout(), newText),
                           "Change tooltip");
@@ -281,8 +280,8 @@ private:
     class SetTooltipAction  : public ComponentUndoableAction <Component>
     {
     public:
-        SetTooltipAction (Component* const comp, ComponentLayout& layout, const String& newValue_)
-            : ComponentUndoableAction <Component> (comp, layout),
+        SetTooltipAction (Component* const comp, ComponentLayout& l, const String& newValue_)
+            : ComponentUndoableAction<Component> (comp, l),
               newValue (newValue_)
         {
             SettableTooltipClient* ttc = dynamic_cast <SettableTooltipClient*> (comp);
@@ -362,17 +361,17 @@ private:
 class FocusOrderProperty   : public ComponentTextProperty <Component>
 {
 public:
-    FocusOrderProperty (Component* comp, JucerDocument& document)
-        : ComponentTextProperty <Component> ("focus order", 8, false, comp, document)
+    FocusOrderProperty (Component* comp, JucerDocument& doc)
+        : ComponentTextProperty <Component> ("focus order", 8, false, comp, doc)
     {
     }
 
-    String getText() const
+    String getText() const override
     {
         return String (component->getExplicitFocusOrder());
     }
 
-    void setText (const String& newText)
+    void setText (const String& newText) override
     {
         document.perform (new SetFocusOrderAction (component, *document.getComponentLayout(), jmax (0, newText.getIntValue())),
                           "Change focus order");
@@ -382,8 +381,8 @@ private:
     class SetFocusOrderAction  : public ComponentUndoableAction <Component>
     {
     public:
-        SetFocusOrderAction (Component* const comp, ComponentLayout& layout, const int newOrder_)
-            : ComponentUndoableAction <Component> (comp, layout),
+        SetFocusOrderAction (Component* const comp, ComponentLayout& l, const int newOrder_)
+            : ComponentUndoableAction <Component> (comp, l),
               newValue (newOrder_)
         {
             oldValue = comp->getExplicitFocusOrder();
@@ -412,26 +411,24 @@ private:
 //==============================================================================
 void ComponentTypeHandler::getEditableProperties (Component* component,
                                                   JucerDocument& document,
-                                                  Array <PropertyComponent*>& properties)
+                                                  Array<PropertyComponent*>& props)
 {
-    properties.add (new ComponentMemberNameProperty (component, document));
-    properties.add (new ComponentNameProperty (component, document));
-    properties.add (new ComponentVirtualClassProperty (component, document));
+    props.add (new ComponentMemberNameProperty (component, document));
+    props.add (new ComponentNameProperty (component, document));
+    props.add (new ComponentVirtualClassProperty (component, document));
 
-    properties.add (new ComponentPositionProperty (component, document, "x", ComponentPositionProperty::componentX));
-    properties.add (new ComponentPositionProperty (component, document, "y", ComponentPositionProperty::componentY));
-    properties.add (new ComponentPositionProperty (component, document, "width", ComponentPositionProperty::componentWidth));
-    properties.add (new ComponentPositionProperty (component, document, "height", ComponentPositionProperty::componentHeight));
+    props.add (new ComponentPositionProperty (component, document, "x", ComponentPositionProperty::componentX));
+    props.add (new ComponentPositionProperty (component, document, "y", ComponentPositionProperty::componentY));
+    props.add (new ComponentPositionProperty (component, document, "width", ComponentPositionProperty::componentWidth));
+    props.add (new ComponentPositionProperty (component, document, "height", ComponentPositionProperty::componentHeight));
 
     if (dynamic_cast <SettableTooltipClient*> (component) != nullptr)
-        properties.add (new TooltipProperty (component, document));
+        props.add (new TooltipProperty (component, document));
 
-    properties.add (new FocusOrderProperty (component, document));
+    props.add (new FocusOrderProperty (component, document));
 }
 
-void ComponentTypeHandler::addPropertiesToPropertyPanel (Component* comp,
-                                                         JucerDocument& document,
-                                                         PropertyPanel& panel)
+void ComponentTypeHandler::addPropertiesToPropertyPanel (Component* comp, JucerDocument& document, PropertyPanel& panel)
 {
     Array <PropertyComponent*> props;
     getEditableProperties (comp, document, props);
@@ -455,13 +452,13 @@ void ComponentTypeHandler::registerEditableColour (int colourId,
 
 void ComponentTypeHandler::addColourProperties (Component* component,
                                                 JucerDocument& document,
-                                                Array <PropertyComponent*>& properties)
+                                                Array<PropertyComponent*>& props)
 {
     for (int i = 0; i < colours.size(); ++i)
-        properties.add (new ComponentColourIdProperty (component, document,
-                                                       colours[i]->colourId,
-                                                       colours[i]->colourName,
-                                                       true));
+        props.add (new ComponentColourIdProperty (component, document,
+                                                  colours[i]->colourId,
+                                                  colours[i]->colourName,
+                                                  true));
 }
 
 String ComponentTypeHandler::getColourIntialisationCode (Component* component,
@@ -524,14 +521,14 @@ void ComponentTypeHandler::fillInResizeCode (GeneratedCode& code, Component* com
         code.getCallbackCode (String::empty, "void", "resized()", false) += r;
 }
 
-String ComponentTypeHandler::getCreationParameters (Component*)
+String ComponentTypeHandler::getCreationParameters (GeneratedCode&, Component*)
 {
     return String::empty;
 }
 
 void ComponentTypeHandler::fillInCreationCode (GeneratedCode& code, Component* component, const String& memberVariableName)
 {
-    String params (getCreationParameters (component));
+    String params (getCreationParameters (code, component));
     const String virtualName (component->getProperties() ["virtualName"].toString());
 
     String s;
@@ -559,7 +556,7 @@ void ComponentTypeHandler::fillInCreationCode (GeneratedCode& code, Component* c
         if (ttc->getTooltip().isNotEmpty())
         {
             s << memberVariableName << "->setTooltip ("
-              << quotedString (ttc->getTooltip())
+              << quotedString (ttc->getTooltip(), code.shouldUseTransMacro())
               << ");\n";
         }
     }

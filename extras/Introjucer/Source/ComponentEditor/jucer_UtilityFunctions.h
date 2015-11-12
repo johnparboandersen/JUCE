@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,10 +22,10 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_UTILITYFUNCTIONS_JUCEHEADER__
-#define __JUCER_UTILITYFUNCTIONS_JUCEHEADER__
+#ifndef JUCER_UTILITYFUNCTIONS_H_INCLUDED
+#define JUCER_UTILITYFUNCTIONS_H_INCLUDED
 
-inline String quotedString (const String& s)
+inline String quotedString (const String& s, bool wrapInTransMacro)
 {
     const int embeddedIndex = s.indexOfIgnoreCase ("%%");
 
@@ -48,18 +48,23 @@ inline String quotedString (const String& s)
             String result;
 
             if (s1.isNotEmpty())
-                result << quotedString (s1) << " + ";
+                result << quotedString (s1, wrapInTransMacro) << " + ";
 
             result << code;
 
             if (s2.isNotEmpty())
-                result << " + " << quotedString (s2);
+                result << " + " << quotedString (s2, wrapInTransMacro);
 
             return result;
         }
     }
 
-    return CodeHelpers::stringLiteral (s);
+    String lit (CodeHelpers::stringLiteral (s));
+
+    if (wrapInTransMacro && lit.startsWithChar ('"'))
+        return "TRANS(" + lit + ")";
+
+    return lit;
 }
 
 inline String castToFloat (const String& expression)
@@ -108,4 +113,4 @@ inline void drawMouseOverCorners (Graphics& g, int w, int h)
         g.fillRect (r.getRectangle (i));
 }
 
-#endif   // __JUCER_UTILITYFUNCTIONS_JUCEHEADER__
+#endif   // JUCER_UTILITYFUNCTIONS_H_INCLUDED

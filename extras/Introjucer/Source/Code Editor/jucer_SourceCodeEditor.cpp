@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -117,13 +117,36 @@ void SourceCodeDocument::applyLastState (CodeEditorComponent& editor) const
 SourceCodeEditor::SourceCodeEditor (OpenDocumentManager::Document* doc, CodeDocument& codeDocument)
     : DocumentEditorComponent (doc)
 {
-    if (document->getFile().hasFileExtension (sourceOrHeaderFileExtensions))
-        setEditor (new CppCodeEditorComponent (document->getFile(), codeDocument));
+    GenericCodeEditorComponent* ed = nullptr;
+    const File file (document->getFile());
+
+    if (fileNeedsCppSyntaxHighlighting (file))
+    {
+        ed = new CppCodeEditorComponent (file, codeDocument);
+    }
     else
-        setEditor (new GenericCodeEditorComponent (document->getFile(), codeDocument, nullptr));
+    {
+        CodeTokeniser* tokeniser = nullptr;
+
+        if (file.hasFileExtension ("xml;svg"))
+        {
+            static XmlTokeniser xmlTokeniser;
+            tokeniser = &xmlTokeniser;
+        }
+
+        if (file.hasFileExtension ("lua"))
+        {
+            static LuaTokeniser luaTokeniser;
+            tokeniser = &luaTokeniser;
+        }
+
+        ed = new GenericCodeEditorComponent (file, codeDocument, tokeniser);
+    }
+
+    setEditor (ed);
 }
 
-SourceCodeEditor::SourceCodeEditor (OpenDocumentManager::Document* doc, CodeEditorComponent* ed)
+SourceCodeEditor::SourceCodeEditor (OpenDocumentManager::Document* doc, GenericCodeEditorComponent* ed)
     : DocumentEditorComponent (doc)
 {
     setEditor (ed);
@@ -140,7 +163,7 @@ SourceCodeEditor::~SourceCodeEditor()
         doc->updateLastState (*editor);
 }
 
-void SourceCodeEditor::setEditor (CodeEditorComponent* newEditor)
+void SourceCodeEditor::setEditor (GenericCodeEditorComponent* newEditor)
 {
     if (editor != nullptr)
         editor->getDocument().removeListener (this);
@@ -194,8 +217,8 @@ void SourceCodeEditor::checkSaveState()
 
 void SourceCodeEditor::valueTreePropertyChanged (ValueTree&, const Identifier&)   { updateColourScheme(); }
 void SourceCodeEditor::valueTreeChildAdded (ValueTree&, ValueTree&)               { updateColourScheme(); }
-void SourceCodeEditor::valueTreeChildRemoved (ValueTree&, ValueTree&)             { updateColourScheme(); }
-void SourceCodeEditor::valueTreeChildOrderChanged (ValueTree&)                    { updateColourScheme(); }
+void SourceCodeEditor::valueTreeChildRemoved (ValueTree&, ValueTree&, int)        { updateColourScheme(); }
+void SourceCodeEditor::valueTreeChildOrderChanged (ValueTree&, int, int)          { updateColourScheme(); }
 void SourceCodeEditor::valueTreeParentChanged (ValueTree&)                        { updateColourScheme(); }
 void SourceCodeEditor::valueTreeRedirected (ValueTree&)                           { updateColourScheme(); }
 
@@ -299,6 +322,16 @@ bool GenericCodeEditorComponent::perform (const InvocationInfo& info)
     return CodeEditorComponent::perform (info);
 }
 
+void GenericCodeEditorComponent::addListener (GenericCodeEditorComponent::Listener* listener)
+{
+    listeners.add (listener);
+}
+
+void GenericCodeEditorComponent::removeListener (GenericCodeEditorComponent::Listener* listener)
+{
+    listeners.remove (listener);
+}
+
 //==============================================================================
 class GenericCodeEditorComponent::FindPanel  : public Component,
                                                private TextEditor::Listener,
@@ -312,20 +345,20 @@ public:
     {
         editor.setColour (CaretComponent::caretColourId, Colours::black);
 
-        addAndMakeVisible (&editor);
+        addAndMakeVisible (editor);
         label.setText ("Find:", dontSendNotification);
         label.setColour (Label::textColourId, Colours::white);
         label.attachToComponent (&editor, false);
 
-        addAndMakeVisible (&caseButton);
+        addAndMakeVisible (caseButton);
         caseButton.setColour (ToggleButton::textColourId, Colours::white);
         caseButton.setToggleState (isCaseSensitiveSearch(), dontSendNotification);
         caseButton.addListener (this);
 
         findPrev.setConnectedEdges (Button::ConnectedOnRight);
         findNext.setConnectedEdges (Button::ConnectedOnLeft);
-        addAndMakeVisible (&findPrev);
-        addAndMakeVisible (&findNext);
+        addAndMakeVisible (findPrev);
+        addAndMakeVisible (findNext);
 
         setWantsKeyboardFocus (false);
         setFocusContainer (true);
@@ -502,6 +535,12 @@ void GenericCodeEditorComponent::handleEscapeKey()
 {
     CodeEditorComponent::handleEscapeKey();
     hideFindPanel();
+}
+
+void GenericCodeEditorComponent::editorViewportPositionChanged()
+{
+    CodeEditorComponent::editorViewportPositionChanged();
+    listeners.call (&Listener::codeEditorViewportMoved, *this);
 }
 
 //==============================================================================

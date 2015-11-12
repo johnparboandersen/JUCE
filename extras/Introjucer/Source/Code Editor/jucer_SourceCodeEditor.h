@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_SOURCECODEEDITOR_JUCEHEADER__
-#define __JUCER_SOURCECODEEDITOR_JUCEHEADER__
+#ifndef JUCER_SOURCECODEEDITOR_H_INCLUDED
+#define JUCER_SOURCECODEEDITOR_H_INCLUDED
 
 #include "../Project/jucer_Project.h"
 #include "../Application/jucer_DocumentEditorComponent.h"
@@ -55,13 +55,13 @@ public:
 
         if (file.hasFileExtension (sourceFileExtensions))
         {
-            const char* extensions[] = { "h", "hpp", "hxx", "hh", nullptr };
+            static const char* extensions[] = { "h", "hpp", "hxx", "hh", nullptr };
             return findCounterpart (file, extensions);
         }
 
         if (file.hasFileExtension (headerFileExtensions))
         {
-            const char* extensions[] = { "cpp", "mm", "cc", "cxx", "c", "m", nullptr };
+            static const char* extensions[] = { "cpp", "mm", "cc", "cxx", "c", "m", nullptr };
             return findCounterpart (file, extensions);
         }
 
@@ -136,6 +136,8 @@ protected:
     void reloadInternal();
 };
 
+class GenericCodeEditorComponent;
+
 //==============================================================================
 class SourceCodeEditor  : public DocumentEditorComponent,
                           private ValueTree::Listener,
@@ -143,28 +145,28 @@ class SourceCodeEditor  : public DocumentEditorComponent,
 {
 public:
     SourceCodeEditor (OpenDocumentManager::Document*, CodeDocument&);
-    SourceCodeEditor (OpenDocumentManager::Document*, CodeEditorComponent*);
+    SourceCodeEditor (OpenDocumentManager::Document*, GenericCodeEditorComponent*);
     ~SourceCodeEditor();
 
     void scrollToKeepRangeOnScreen (Range<int> range);
     void highlight (Range<int> range, bool cursorAtStart);
 
-    ScopedPointer<CodeEditorComponent> editor;
+    ScopedPointer<GenericCodeEditorComponent> editor;
 
 private:
     void resized() override;
 
     void valueTreePropertyChanged (ValueTree&, const Identifier&) override;
     void valueTreeChildAdded (ValueTree&, ValueTree&) override;
-    void valueTreeChildRemoved (ValueTree&, ValueTree&) override;
-    void valueTreeChildOrderChanged (ValueTree&) override;
+    void valueTreeChildRemoved (ValueTree&, ValueTree&, int) override;
+    void valueTreeChildOrderChanged (ValueTree&, int, int) override;
     void valueTreeParentChanged (ValueTree&) override;
     void valueTreeRedirected (ValueTree&) override;
 
     void codeDocumentTextInserted (const String&, int) override;
     void codeDocumentTextDeleted (int, int) override;
 
-    void setEditor (CodeEditorComponent*);
+    void setEditor (GenericCodeEditorComponent*);
     void updateColourScheme();
     void checkSaveState();
 
@@ -191,6 +193,7 @@ public:
     void findSelection();
     void findNext (bool forwards, bool skipCurrentSelection);
     void handleEscapeKey() override;
+    void editorViewportPositionChanged() override;
 
     void resized() override;
 
@@ -199,10 +202,20 @@ public:
     static bool isCaseSensitiveSearch()             { return getAppSettings().getGlobalProperties().getBoolValue ("searchCaseSensitive"); }
     static void setCaseSensitiveSearch (bool b)     { getAppSettings().getGlobalProperties().setValue ("searchCaseSensitive", b); }
 
+    struct Listener
+    {
+        virtual ~Listener() {}
+        virtual void codeEditorViewportMoved (CodeEditorComponent&) = 0;
+    };
+
+    void addListener (Listener* listener);
+    void removeListener (Listener* listener);
+
 private:
     File file;
     class FindPanel;
     ScopedPointer<FindPanel> findPanel;
+    ListenerList<Listener> listeners;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GenericCodeEditorComponent)
 };
@@ -211,7 +224,7 @@ private:
 class CppCodeEditorComponent  : public GenericCodeEditorComponent
 {
 public:
-    CppCodeEditorComponent (const File& file, CodeDocument&);
+    CppCodeEditorComponent (const File&, CodeDocument&);
     ~CppCodeEditorComponent();
 
     void addPopupMenuItems (PopupMenu&, const MouseEvent*) override;
@@ -227,4 +240,4 @@ private:
 };
 
 
-#endif   // __JUCER_SOURCECODEEDITOR_JUCEHEADER__
+#endif   // JUCER_SOURCECODEEDITOR_H_INCLUDED

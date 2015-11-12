@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -39,7 +39,7 @@ DocumentEditorComponent::~DocumentEditorComponent()
     IntrojucerApp::getApp().openDocumentManager.removeListener (this);
 }
 
-void DocumentEditorComponent::documentAboutToClose (OpenDocumentManager::Document* closingDoc)
+bool DocumentEditorComponent::documentAboutToClose (OpenDocumentManager::Document* closingDoc)
 {
     if (document == closingDoc)
     {
@@ -48,6 +48,8 @@ void DocumentEditorComponent::documentAboutToClose (OpenDocumentManager::Documen
         if (ProjectContentComponent* pcc = findParentComponentOfClass<ProjectContentComponent>())
             pcc->hideDocument (document);
     }
+
+    return true;
 }
 
 void DocumentEditorComponent::setEditedState (bool /*hasBeenEdited*/)

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -27,7 +27,7 @@
 #include "jucer_MainWindow.h"
 #include "jucer_OpenDocumentManager.h"
 #include "../Code Editor/jucer_SourceCodeEditor.h"
-#include "../Project/jucer_NewProjectWizard.h"
+#include "../Wizards/jucer_NewProjectWizardClasses.h"
 #include "../Utility/jucer_JucerTreeViewBase.h"
 
 
@@ -39,11 +39,12 @@ MainWindow::MainWindow()
                       false)
 {
     setUsingNativeTitleBar (true);
-    createProjectContentCompIfNeeded();
 
    #if ! JUCE_MAC
     setMenuBar (IntrojucerApp::getApp().menuModel);
    #endif
+
+    createProjectContentCompIfNeeded();
 
     setResizable (true, false);
     centreWithSize (800, 600);
@@ -58,7 +59,7 @@ MainWindow::MainWindow()
     {
         commandManager.getKeyMappings()->resetToDefaultMappings();
 
-        ScopedPointer <XmlElement> keys (getGlobalProperties().getXmlValue ("keyMappings"));
+        ScopedPointer<XmlElement> keys (getGlobalProperties().getXmlValue ("keyMappings"));
 
         if (keys != nullptr)
             commandManager.getKeyMappings()->restoreFromXml (*keys);
@@ -111,7 +112,7 @@ void MainWindow::makeVisible()
 
 ProjectContentComponent* MainWindow::getProjectContentComponent() const
 {
-    return dynamic_cast <ProjectContentComponent*> (getContentComponent());
+    return dynamic_cast<ProjectContentComponent*> (getContentComponent());
 }
 
 void MainWindow::closeButtonPressed()
@@ -191,10 +192,16 @@ bool MainWindow::openFile (const File& file)
     {
         ScopedPointer<Project> newDoc (new Project (file));
 
-        if (newDoc->loadFrom (file, true)
-             && closeCurrentProject())
+        Result result (newDoc->loadFrom (file, true));
+
+        if (result.wasOk() && closeCurrentProject())
         {
-            setProject (newDoc.release());
+            setProject (newDoc);
+            newDoc.release()->setChangedFlag (false);
+
+            jassert (getProjectContentComponent() != nullptr);
+            getProjectContentComponent()->reloadLastOpenDocuments();
+
             return true;
         }
     }
@@ -229,12 +236,12 @@ void MainWindow::filesDropped (const StringArray& filenames, int /*mouseX*/, int
 bool MainWindow::shouldDropFilesWhenDraggedExternally (const DragAndDropTarget::SourceDetails& sourceDetails,
                                                        StringArray& files, bool& canMoveFiles)
 {
-    if (TreeView* tv = dynamic_cast <TreeView*> (sourceDetails.sourceComponent.get()))
+    if (TreeView* tv = dynamic_cast<TreeView*> (sourceDetails.sourceComponent.get()))
     {
         Array<JucerTreeViewBase*> selected;
 
         for (int i = tv->getNumSelectedItems(); --i >= 0;)
-            if (JucerTreeViewBase* b = dynamic_cast <JucerTreeViewBase*> (tv->getSelectedItem(i)))
+            if (JucerTreeViewBase* b = dynamic_cast<JucerTreeViewBase*> (tv->getSelectedItem(i)))
                 selected.add (b);
 
         if (selected.size() > 0)
@@ -285,7 +292,10 @@ void MainWindow::showNewProjectWizard()
 {
     jassert (currentProject == nullptr);
     setContentOwned (createNewProjectWizardComponent(), true);
-    makeVisible();
+    centreWithSize (900, 630);
+    setVisible (true);
+    addToDesktop();
+    getContentComponent()->grabKeyboardFocus();
 }
 
 //==============================================================================
@@ -359,7 +369,7 @@ bool MainWindowList::askAllWindowsToClose()
 void MainWindowList::createWindowIfNoneAreOpen()
 {
     if (windows.size() == 0)
-        createNewMainWindow()->makeVisible();
+        createNewMainWindow()->showNewProjectWizard();
 }
 
 void MainWindowList::closeWindow (MainWindow* w)
@@ -384,8 +394,7 @@ void MainWindowList::closeWindow (MainWindow* w)
 
 void MainWindowList::openDocument (OpenDocumentManager::Document* doc, bool grabFocus)
 {
-    MainWindow* w = getOrCreateFrontmostWindow();
-    w->getProjectContentComponent()->showDocument (doc, grabFocus);
+    getOrCreateFrontmostWindow()->getProjectContentComponent()->showDocument (doc, grabFocus);
 }
 
 bool MainWindowList::openFile (const File& file)
@@ -403,29 +412,17 @@ bool MainWindowList::openFile (const File& file)
 
     if (file.hasFileExtension (Project::projectFileExtension))
     {
-        ScopedPointer<Project> newDoc (new Project (file));
+        MainWindow* const w = getOrCreateEmptyWindow();
+        bool ok = w->openFile (file);
 
-        if (newDoc->loadFrom (file, true))
-        {
-            MainWindow* const w = getOrCreateEmptyWindow();
-            w->setProject (newDoc);
+        w->makeVisible();
+        avoidSuperimposedWindows (w);
 
-            newDoc.release()->setChangedFlag (false);
-
-            w->makeVisible();
-            avoidSuperimposedWindows (w);
-
-            jassert (w->getProjectContentComponent() != nullptr);
-            w->getProjectContentComponent()->reloadLastOpenDocuments();
-
-            return true;
-        }
+        return ok;
     }
-    else if (file.exists())
-    {
-        MainWindow* const w = getOrCreateFrontmostWindow();
-        return w->openFile (file);
-    }
+
+    if (file.exists())
+        return getOrCreateFrontmostWindow()->openFile (file);
 
     return false;
 }
@@ -451,7 +448,7 @@ MainWindow* MainWindowList::getOrCreateFrontmostWindow()
 
     for (int i = Desktop::getInstance().getNumComponents(); --i >= 0;)
     {
-        MainWindow* mw = dynamic_cast <MainWindow*> (Desktop::getInstance().getComponent (i));
+        MainWindow* mw = dynamic_cast<MainWindow*> (Desktop::getInstance().getComponent (i));
         if (windows.contains (mw))
             return mw;
     }
@@ -466,12 +463,19 @@ MainWindow* MainWindowList::getOrCreateEmptyWindow()
 
     for (int i = Desktop::getInstance().getNumComponents(); --i >= 0;)
     {
-        MainWindow* mw = dynamic_cast <MainWindow*> (Desktop::getInstance().getComponent (i));
+        MainWindow* mw = dynamic_cast<MainWindow*> (Desktop::getInstance().getComponent (i));
         if (windows.contains (mw) && mw->getProject() == nullptr)
             return mw;
     }
 
     return createNewMainWindow();
+}
+
+void MainWindowList::updateAllWindowTitles()
+{
+    for (int i = 0; i < windows.size(); ++i)
+        if (ProjectContentComponent* pc = windows.getUnchecked(i)->getProjectContentComponent())
+            pc->updateMainWindowTitle();
 }
 
 void MainWindowList::avoidSuperimposedWindows (MainWindow* const mw)
@@ -506,7 +510,7 @@ void MainWindowList::saveCurrentlyOpenProjectList()
     Desktop& desktop = Desktop::getInstance();
     for (int i = 0; i < desktop.getNumComponents(); ++i)
     {
-        if (MainWindow* const mw = dynamic_cast <MainWindow*> (desktop.getComponent(i)))
+        if (MainWindow* const mw = dynamic_cast<MainWindow*> (desktop.getComponent(i)))
             if (Project* p = mw->getProject())
                 projects.add (p->getFile());
     }
@@ -533,9 +537,45 @@ Project* MainWindowList::getFrontmostProject()
     Desktop& desktop = Desktop::getInstance();
 
     for (int i = desktop.getNumComponents(); --i >= 0;)
-        if (MainWindow* const mw = dynamic_cast <MainWindow*> (desktop.getComponent(i)))
+        if (MainWindow* const mw = dynamic_cast<MainWindow*> (desktop.getComponent(i)))
             if (Project* p = mw->getProject())
                 return p;
 
     return nullptr;
+}
+
+File findDefaultModulesFolder (bool mustContainJuceCoreModule)
+{
+    const MainWindowList& windows = IntrojucerApp::getApp().mainWindowList;
+
+    for (int i = windows.windows.size(); --i >= 0;)
+    {
+        if (Project* p = windows.windows.getUnchecked (i)->getProject())
+        {
+            const File f (EnabledModuleList::findDefaultModulesFolder (*p));
+
+            if (isJuceModulesFolder (f) || (f.isDirectory() && ! mustContainJuceCoreModule))
+                return f;
+        }
+    }
+
+    if (mustContainJuceCoreModule)
+        return findDefaultModulesFolder (false);
+
+    File f (File::getSpecialLocation (File::currentApplicationFile));
+
+    for (;;)
+    {
+        File parent (f.getParentDirectory());
+
+        if (parent == f || ! parent.isDirectory())
+            break;
+
+        if (isJuceFolder (parent))
+            return parent.getChildFile ("modules");
+
+        f = parent;
+    }
+
+    return File::nonexistent;
 }

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_GROUPINFORMATIONCOMPONENT_JUCEHEADER__
-#define __JUCER_GROUPINFORMATIONCOMPONENT_JUCEHEADER__
+#ifndef JUCER_GROUPINFORMATIONCOMPONENT_H_INCLUDED
+#define JUCER_GROUPINFORMATIONCOMPONENT_H_INCLUDED
 
 #include "../jucer_Headers.h"
 #include "../Project/jucer_Project.h"
@@ -40,7 +40,7 @@ public:
     {
         list.setModel (this);
         list.setColour (ListBox::backgroundColourId, Colours::transparentBlack);
-        addAndMakeVisible (&list);
+        addAndMakeVisible (list);
         list.updateContent();
         list.setRowHeight (20);
         item.state.addListener (this);
@@ -96,8 +96,8 @@ public:
     //==============================================================================
     void valueTreePropertyChanged (ValueTree&, const Identifier&) override    { itemChanged(); }
     void valueTreeChildAdded (ValueTree&, ValueTree&) override                { itemChanged(); }
-    void valueTreeChildRemoved (ValueTree&, ValueTree&) override              { itemChanged(); }
-    void valueTreeChildOrderChanged (ValueTree&) override                     { itemChanged(); }
+    void valueTreeChildRemoved (ValueTree&, ValueTree&, int) override         { itemChanged(); }
+    void valueTreeChildOrderChanged (ValueTree&, int, int) override           { itemChanged(); }
     void valueTreeParentChanged (ValueTree&) override                         { itemChanged(); }
 
 private:
@@ -117,15 +117,19 @@ private:
         FileOptionComponent (const Project::Item& fileItem)
             : item (fileItem),
               compileButton ("Compile"),
-              resourceButton ("Add to Binary Resources")
+              binaryResourceButton ("Binary Resource"),
+              xcodeResourceButton ("Xcode Resource")
         {
             if (item.isFile())
             {
-                addAndMakeVisible (&compileButton);
+                addAndMakeVisible (compileButton);
                 compileButton.getToggleStateValue().referTo (item.getShouldCompileValue());
 
-                addAndMakeVisible (&resourceButton);
-                resourceButton.getToggleStateValue().referTo (item.getShouldAddToResourceValue());
+                addAndMakeVisible (binaryResourceButton);
+                binaryResourceButton.getToggleStateValue().referTo (item.getShouldAddToBinaryResourcesValue());
+
+                addAndMakeVisible (xcodeResourceButton);
+                xcodeResourceButton.getToggleStateValue().referTo (item.getShouldAddToXcodeResourcesValue());
             }
         }
 
@@ -148,20 +152,19 @@ private:
 
         void resized() override
         {
-            int w = 180;
-            resourceButton.setBounds (getWidth() - w, 1, w, getHeight() - 2);
-            w = 100;
-            compileButton.setBounds (resourceButton.getX() - w, 1, w, getHeight() - 2);
+            binaryResourceButton.setBounds (getWidth() - 110, 1, 110, getHeight() - 2);
+            xcodeResourceButton.setBounds (binaryResourceButton.getX() - 110, 1, 110, getHeight() - 2);
+            compileButton.setBounds (xcodeResourceButton.getX() - 70, 1, 70, getHeight() - 2);
         }
 
         Project::Item item;
 
     private:
-        ToggleButton compileButton, resourceButton;
+        ToggleButton compileButton, binaryResourceButton, xcodeResourceButton;
     };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GroupInformationComponent)
 };
 
 
-#endif   // __JUCER_GROUPINFORMATIONCOMPONENT_JUCEHEADER__
+#endif   // JUCER_GROUPINFORMATIONCOMPONENT_H_INCLUDED

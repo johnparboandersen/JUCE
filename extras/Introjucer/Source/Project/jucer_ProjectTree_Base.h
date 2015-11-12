@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -38,16 +38,14 @@ public:
     }
 
     //==============================================================================
-    virtual bool isRoot() const                         { return false; }
-
     virtual bool acceptsFileDrop (const StringArray& files) const = 0;
     virtual bool acceptsDragItems (const OwnedArray<Project::Item>& selectedNodes) = 0;
 
     //==============================================================================
-    virtual String getDisplayName() const               { return item.getName(); }
-    virtual String getRenamingName() const              { return getDisplayName(); }
+    String getDisplayName() const override              { return item.getName(); }
+    String getRenamingName() const override             { return getDisplayName(); }
 
-    virtual void setName (const String& newName)
+    void setName (const String& newName) override
     {
         if (item.isMainGroup())
             item.project.setTitle (newName);
@@ -55,12 +53,12 @@ public:
             item.getNameValue() = newName;
     }
 
-    virtual bool isMissing()                            { return isFileMissing; }
+    bool isMissing() override                           { return isFileMissing; }
     virtual File getFile() const                        { return item.getFile(); }
 
-    virtual void deleteItem()                           { item.removeItemFromProject(); }
+    void deleteItem() override                          { item.removeItemFromProject(); }
 
-    virtual void deleteAllSelectedItems()
+    virtual void deleteAllSelectedItems() override
     {
         TreeView* tree = getOwnerView();
         const int numSelected = tree->getNumSelectedItems();
@@ -151,7 +149,7 @@ public:
             for (int i = 0; i < fc.getResults().size(); ++i)
                 files.add (fc.getResults().getReference(i).getFullPathName());
 
-            addFiles (files, 0);
+            addFilesRetainingSortOrder (files);
         }
     }
 
@@ -167,18 +165,24 @@ public:
         }
     }
 
-    virtual void addFiles (const StringArray& files, int insertIndex)
+    virtual void addFilesAtIndex (const StringArray& files, int insertIndex)
     {
         if (ProjectTreeItemBase* p = getParentProjectItem())
-            p->addFiles (files, insertIndex);
+            p->addFilesAtIndex (files, insertIndex);
     }
 
-    virtual void moveSelectedItemsTo (OwnedArray <Project::Item>& selectedNodes, int insertIndex)
+    virtual void addFilesRetainingSortOrder (const StringArray& files)
+    {
+        if (ProjectTreeItemBase* p = getParentProjectItem())
+            p->addFilesRetainingSortOrder (files);
+    }
+
+    virtual void moveSelectedItemsTo (OwnedArray <Project::Item>&, int /*insertIndex*/)
     {
         jassertfalse;
     }
 
-    virtual void showMultiSelectionPopupMenu()
+    void showMultiSelectionPopupMenu() override
     {
         PopupMenu m;
         m.addItem (1, "Delete");
@@ -216,15 +220,15 @@ public:
     }
 
     //==============================================================================
-    void valueTreePropertyChanged (ValueTree& tree, const Identifier& property) override
+    void valueTreePropertyChanged (ValueTree& tree, const Identifier&) override
     {
         if (tree == item.state)
             repaintItem();
     }
 
-    void valueTreeChildAdded (ValueTree& parentTree, ValueTree&) override    { treeChildrenChanged (parentTree); }
-    void valueTreeChildRemoved (ValueTree& parentTree, ValueTree&) override  { treeChildrenChanged (parentTree); }
-    void valueTreeChildOrderChanged (ValueTree& parentTree) override         { treeChildrenChanged (parentTree); }
+    void valueTreeChildAdded (ValueTree& parentTree, ValueTree&) override         { treeChildrenChanged (parentTree); }
+    void valueTreeChildRemoved (ValueTree& parentTree, ValueTree&, int) override  { treeChildrenChanged (parentTree); }
+    void valueTreeChildOrderChanged (ValueTree& parentTree, int, int) override    { treeChildrenChanged (parentTree); }
     void valueTreeParentChanged (ValueTree&) override {}
 
     //==============================================================================
@@ -261,29 +265,29 @@ public:
 
     void filesDropped (const StringArray& files, int insertIndex) override
     {
-        addFiles (files, insertIndex);
+        if (files.size() == 1 && File (files[0]).hasFileExtension (Project::projectFileExtension))
+            IntrojucerApp::getApp().openFile (files[0]);
+        else
+            addFilesAtIndex (files, insertIndex);
     }
 
     bool isInterestedInDragSource (const DragAndDropTarget::SourceDetails& dragSourceDetails) override
     {
-        if (dragSourceDetails.description != projectItemDragType)
-            return false;
-
-        OwnedArray <Project::Item> selectedNodes;
-        getAllSelectedNodesInTree (dragSourceDetails.sourceComponent, selectedNodes);
+        OwnedArray<Project::Item> selectedNodes;
+        getSelectedProjectItemsBeingDragged (dragSourceDetails, selectedNodes);
 
         return selectedNodes.size() > 0 && acceptsDragItems (selectedNodes);
     }
 
     void itemDropped (const DragAndDropTarget::SourceDetails& dragSourceDetails, int insertIndex) override
     {
-        OwnedArray <Project::Item> selectedNodes;
-        getAllSelectedNodesInTree (dragSourceDetails.sourceComponent, selectedNodes);
+        OwnedArray<Project::Item> selectedNodes;
+        getSelectedProjectItemsBeingDragged (dragSourceDetails, selectedNodes);
 
         if (selectedNodes.size() > 0)
         {
             TreeView* tree = getOwnerView();
-            ScopedPointer <XmlElement> oldOpenness (tree->getOpennessState (false));
+            ScopedPointer<XmlElement> oldOpenness (tree->getOpennessState (false));
 
             moveSelectedItemsTo (selectedNodes, insertIndex);
 
@@ -299,20 +303,24 @@ public:
         return item.isImageFile() ? 250 : JucerTreeViewBase::getMillisecsAllowedForDragGesture();
     }
 
-    static void getAllSelectedNodesInTree (Component* componentInTree, OwnedArray <Project::Item>& selectedNodes)
+    static void getSelectedProjectItemsBeingDragged (const DragAndDropTarget::SourceDetails& dragSourceDetails,
+                                                     OwnedArray<Project::Item>& selectedNodes)
     {
-        TreeView* tree = dynamic_cast<TreeView*> (componentInTree);
-
-        if (tree == nullptr)
-            tree = componentInTree->findParentComponentOfClass<TreeView>();
-
-        if (tree != nullptr)
+        if (dragSourceDetails.description == projectItemDragType)
         {
-            const int numSelected = tree->getNumSelectedItems();
+            TreeView* tree = dynamic_cast<TreeView*> (dragSourceDetails.sourceComponent.get());
 
-            for (int i = 0; i < numSelected; ++i)
-                if (const ProjectTreeItemBase* const p = dynamic_cast<ProjectTreeItemBase*> (tree->getSelectedItem (i)))
-                    selectedNodes.add (new Project::Item (p->item));
+            if (tree == nullptr)
+                tree = dragSourceDetails.sourceComponent->findParentComponentOfClass<TreeView>();
+
+            if (tree != nullptr)
+            {
+                const int numSelected = tree->getNumSelectedItems();
+
+                for (int i = 0; i < numSelected; ++i)
+                    if (const ProjectTreeItemBase* const p = dynamic_cast<ProjectTreeItemBase*> (tree->getSelectedItem (i)))
+                        selectedNodes.add (new Project::Item (p->item));
+            }
         }
     }
 

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -29,22 +29,74 @@
 #include "jucer_ProjectExport_MSVC.h"
 #include "jucer_ProjectExport_XCode.h"
 #include "jucer_ProjectExport_Android.h"
+#include "jucer_ProjectExport_AndroidStudio.h"
 #include "jucer_ProjectExport_CodeBlocks.h"
 
 //==============================================================================
+static void addType (Array<ProjectExporter::ExporterTypeInfo>& list,
+                     const char* name, const void* iconData, int iconDataSize)
+{
+    ProjectExporter::ExporterTypeInfo type = { name, iconData, iconDataSize };
+    list.add (type);
+}
+
+Array<ProjectExporter::ExporterTypeInfo> ProjectExporter::getExporterTypes()
+{
+    Array<ProjectExporter::ExporterTypeInfo> types;
+
+    addType (types, XCodeProjectExporter::getNameMac(),          BinaryData::projectIconXcode_png,          BinaryData::projectIconXcode_pngSize);
+    addType (types, XCodeProjectExporter::getNameiOS(),          BinaryData::projectIconXcodeIOS_png,       BinaryData::projectIconXcodeIOS_pngSize);
+    addType (types, MSVCProjectExporterVC2015::getName(),        BinaryData::projectIconVisualStudio_png,   BinaryData::projectIconVisualStudio_pngSize);
+    addType (types, MSVCProjectExporterVC2013::getName(),        BinaryData::projectIconVisualStudio_png,   BinaryData::projectIconVisualStudio_pngSize);
+    addType (types, MSVCProjectExporterVC2012::getName(),        BinaryData::projectIconVisualStudio_png,   BinaryData::projectIconVisualStudio_pngSize);
+    addType (types, MSVCProjectExporterVC2010::getName(),        BinaryData::projectIconVisualStudio_png,   BinaryData::projectIconVisualStudio_pngSize);
+    addType (types, MSVCProjectExporterVC2008::getName(),        BinaryData::projectIconVisualStudio_png,   BinaryData::projectIconVisualStudio_pngSize);
+    addType (types, MSVCProjectExporterVC2005::getName(),        BinaryData::projectIconVisualStudio_png,   BinaryData::projectIconVisualStudio_pngSize);
+    addType (types, MakefileProjectExporter::getNameLinux(),     BinaryData::projectIconLinuxMakefile_png,  BinaryData::projectIconLinuxMakefile_pngSize);
+    addType (types, AndroidStudioProjectExporter::getName(),     BinaryData::projectIconAndroid_png,        BinaryData::projectIconAndroid_pngSize);
+    addType (types, AndroidAntProjectExporter::getName(),        BinaryData::projectIconAndroid_png,        BinaryData::projectIconAndroid_pngSize);
+    addType (types, CodeBlocksProjectExporter::getNameWindows(), BinaryData::projectIconCodeblocks_png,     BinaryData::projectIconCodeblocks_pngSize);
+    addType (types, CodeBlocksProjectExporter::getNameLinux(),   BinaryData::projectIconCodeblocks_png,     BinaryData::projectIconCodeblocks_pngSize);
+
+    return types;
+}
+
+ProjectExporter* ProjectExporter::createNewExporter (Project& project, const int index)
+{
+    ProjectExporter* exp = nullptr;
+
+    switch (index)
+    {
+        case 0:     exp = new XCodeProjectExporter         (project, ValueTree (XCodeProjectExporter         ::getValueTreeTypeName (false)), false); break;
+        case 1:     exp = new XCodeProjectExporter         (project, ValueTree (XCodeProjectExporter         ::getValueTreeTypeName (true)), true); break;
+        case 2:     exp = new MSVCProjectExporterVC2015    (project, ValueTree (MSVCProjectExporterVC2015    ::getValueTreeTypeName())); break;
+        case 3:     exp = new MSVCProjectExporterVC2013    (project, ValueTree (MSVCProjectExporterVC2013    ::getValueTreeTypeName())); break;
+        case 4:     exp = new MSVCProjectExporterVC2012    (project, ValueTree (MSVCProjectExporterVC2012    ::getValueTreeTypeName())); break;
+        case 5:     exp = new MSVCProjectExporterVC2010    (project, ValueTree (MSVCProjectExporterVC2010    ::getValueTreeTypeName())); break;
+        case 6:     exp = new MSVCProjectExporterVC2008    (project, ValueTree (MSVCProjectExporterVC2008    ::getValueTreeTypeName())); break;
+        case 7:     exp = new MSVCProjectExporterVC2005    (project, ValueTree (MSVCProjectExporterVC2005    ::getValueTreeTypeName())); break;
+        case 8:     exp = new MakefileProjectExporter      (project, ValueTree (MakefileProjectExporter      ::getValueTreeTypeName())); break;
+        case 9:     exp = new AndroidStudioProjectExporter (project, ValueTree (AndroidStudioProjectExporter ::getValueTreeTypeName())); break;
+        case 10:    exp = new AndroidAntProjectExporter    (project, ValueTree (AndroidAntProjectExporter    ::getValueTreeTypeName())); break;
+        case 11:    exp = new CodeBlocksProjectExporter    (project, ValueTree (CodeBlocksProjectExporter    ::getValueTreeTypeName (CodeBlocksProjectExporter::windowsTarget)), CodeBlocksProjectExporter::windowsTarget); break;
+        case 12:    exp = new CodeBlocksProjectExporter    (project, ValueTree (CodeBlocksProjectExporter    ::getValueTreeTypeName (CodeBlocksProjectExporter::linuxTarget)),   CodeBlocksProjectExporter::linuxTarget); break;
+        default:    jassertfalse; return 0;
+    }
+
+    exp->createDefaultConfigs();
+    exp->createDefaultModulePaths();
+
+    return exp;
+}
+
 StringArray ProjectExporter::getExporterNames()
 {
     StringArray s;
-    s.add (XCodeProjectExporter::getNameMac());
-    s.add (XCodeProjectExporter::getNameiOS());
-    s.add (MSVCProjectExporterVC2005::getName());
-    s.add (MSVCProjectExporterVC2008::getName());
-    s.add (MSVCProjectExporterVC2010::getName());
-    s.add (MSVCProjectExporterVC2012::getName());
-    s.add (MSVCProjectExporterVC2013::getName());
-    s.add (MakefileProjectExporter::getNameLinux());
-    s.add (AndroidProjectExporter::getNameAndroid());
-    s.add (CodeBlocksProjectExporter::getNameCodeBlocks());
+    Array<ExporterTypeInfo> types (getExporterTypes());
+
+    for (int i = 0; i < types.size(); ++i)
+        s.add (types.getReference(i).name);
+
     return s;
 }
 
@@ -61,32 +113,6 @@ String ProjectExporter::getCurrentPlatformExporterName()
    #endif
 }
 
-ProjectExporter* ProjectExporter::createNewExporter (Project& project, const int index)
-{
-    ProjectExporter* exp = nullptr;
-
-    switch (index)
-    {
-        case 0:     exp = new XCodeProjectExporter      (project, ValueTree (XCodeProjectExporter     ::getValueTreeTypeName (false)), false); break;
-        case 1:     exp = new XCodeProjectExporter      (project, ValueTree (XCodeProjectExporter     ::getValueTreeTypeName (true)), true); break;
-        case 2:     exp = new MSVCProjectExporterVC2005 (project, ValueTree (MSVCProjectExporterVC2005::getValueTreeTypeName())); break;
-        case 3:     exp = new MSVCProjectExporterVC2008 (project, ValueTree (MSVCProjectExporterVC2008::getValueTreeTypeName())); break;
-        case 4:     exp = new MSVCProjectExporterVC2010 (project, ValueTree (MSVCProjectExporterVC2010::getValueTreeTypeName())); break;
-        case 5:     exp = new MSVCProjectExporterVC2012 (project, ValueTree (MSVCProjectExporterVC2012::getValueTreeTypeName())); break;
-        case 6:     exp = new MSVCProjectExporterVC2013 (project, ValueTree (MSVCProjectExporterVC2013::getValueTreeTypeName())); break;
-        case 7:     exp = new MakefileProjectExporter   (project, ValueTree (MakefileProjectExporter  ::getValueTreeTypeName())); break;
-        case 8:     exp = new AndroidProjectExporter    (project, ValueTree (AndroidProjectExporter   ::getValueTreeTypeName())); break;
-        case 9:     exp = new CodeBlocksProjectExporter (project, ValueTree (CodeBlocksProjectExporter::getValueTreeTypeName())); break;
-
-        default:    jassertfalse; return 0;
-    }
-
-    exp->createDefaultConfigs();
-    exp->createDefaultModulePaths();
-
-    return exp;
-}
-
 ProjectExporter* ProjectExporter::createNewExporter (Project& project, const String& name)
 {
     return createNewExporter (project, getExporterNames().indexOf (name));
@@ -94,15 +120,17 @@ ProjectExporter* ProjectExporter::createNewExporter (Project& project, const Str
 
 ProjectExporter* ProjectExporter::createExporter (Project& project, const ValueTree& settings)
 {
-    ProjectExporter*       exp = MSVCProjectExporterVC2005::createForSettings (project, settings);
-    if (exp == nullptr)    exp = MSVCProjectExporterVC2008::createForSettings (project, settings);
-    if (exp == nullptr)    exp = MSVCProjectExporterVC2010::createForSettings (project, settings);
-    if (exp == nullptr)    exp = MSVCProjectExporterVC2012::createForSettings (project, settings);
-    if (exp == nullptr)    exp = MSVCProjectExporterVC2013::createForSettings (project, settings);
-    if (exp == nullptr)    exp = XCodeProjectExporter     ::createForSettings (project, settings);
-    if (exp == nullptr)    exp = MakefileProjectExporter  ::createForSettings (project, settings);
-    if (exp == nullptr)    exp = AndroidProjectExporter   ::createForSettings (project, settings);
-    if (exp == nullptr)    exp = CodeBlocksProjectExporter::createForSettings (project, settings);
+    ProjectExporter*       exp = MSVCProjectExporterVC2005    ::createForSettings (project, settings);
+    if (exp == nullptr)    exp = MSVCProjectExporterVC2008    ::createForSettings (project, settings);
+    if (exp == nullptr)    exp = MSVCProjectExporterVC2010    ::createForSettings (project, settings);
+    if (exp == nullptr)    exp = MSVCProjectExporterVC2012    ::createForSettings (project, settings);
+    if (exp == nullptr)    exp = MSVCProjectExporterVC2013    ::createForSettings (project, settings);
+    if (exp == nullptr)    exp = MSVCProjectExporterVC2015    ::createForSettings (project, settings);
+    if (exp == nullptr)    exp = XCodeProjectExporter         ::createForSettings (project, settings);
+    if (exp == nullptr)    exp = MakefileProjectExporter      ::createForSettings (project, settings);
+    if (exp == nullptr)    exp = AndroidStudioProjectExporter ::createForSettings (project, settings);
+    if (exp == nullptr)    exp = AndroidAntProjectExporter    ::createForSettings (project, settings);
+    if (exp == nullptr)    exp = CodeBlocksProjectExporter    ::createForSettings (project, settings);
 
     jassert (exp != nullptr);
     return exp;
@@ -123,10 +151,12 @@ bool ProjectExporter::canProjectBeLaunched (Project* project)
             MSVCProjectExporterVC2010::getValueTreeTypeName(),
             MSVCProjectExporterVC2012::getValueTreeTypeName(),
             MSVCProjectExporterVC2013::getValueTreeTypeName(),
+            MSVCProjectExporterVC2015::getValueTreeTypeName(),
            #elif JUCE_LINUX
             // (this doesn't currently launch.. not really sure what it would do on linux)
             //MakefileProjectExporter::getValueTreeTypeName(),
            #endif
+            AndroidStudioProjectExporter::getValueTreeTypeName(),
 
             nullptr
         };
@@ -140,14 +170,14 @@ bool ProjectExporter::canProjectBeLaunched (Project* project)
 }
 
 //==============================================================================
-ProjectExporter::ProjectExporter (Project& p, const ValueTree& settings_)
+ProjectExporter::ProjectExporter (Project& p, const ValueTree& state)
     : xcodeIsBundle (false),
       xcodeCreatePList (false),
       xcodeCanUseDwarf (true),
       makefileIsDLL (false),
       msvcIsDLL (false),
       msvcIsWindowsSubsystem (true),
-      settings (settings_),
+      settings (state),
       project (p),
       projectType (p.getProjectType()),
       projectName (p.getTitle()),
@@ -172,12 +202,13 @@ RelativePath ProjectExporter::rebaseFromProjectFolderToBuildTarget (const Relati
 
 bool ProjectExporter::shouldFileBeCompiledByDefault (const RelativePath& file) const
 {
-    return file.hasFileExtension ("cpp;cc;c;cxx");
+    return file.hasFileExtension (cOrCppFileExtensions)
+        || file.hasFileExtension (asmFileExtensions);
 }
 
 void ProjectExporter::createPropertyEditors (PropertyListBuilder& props)
 {
-    props.add (new TextPropertyComponent (getTargetLocationValue(), "Target Project Folder", 1024, false),
+    props.add (new TextPropertyComponent (getTargetLocationValue(), "Target Project Folder", 2048, false),
                "The location of the folder in which the " + name + " project will be created. "
                "This path can be absolute, but it's much more sensible to make it relative to the jucer project directory.");
 
@@ -191,15 +222,15 @@ void ProjectExporter::createPropertyEditors (PropertyListBuilder& props)
                "Extra preprocessor definitions. Use the form \"NAME1=value NAME2=value\", using whitespace, commas, "
                "or new-lines to separate the items - to include a space or comma in a definition, precede it with a backslash.");
 
-    props.add (new TextPropertyComponent (getExtraCompilerFlags(), "Extra compiler flags", 2048, true),
+    props.add (new TextPropertyComponent (getExtraCompilerFlags(), "Extra compiler flags", 8192, true),
                "Extra command-line flags to be passed to the compiler. This string can contain references to preprocessor definitions in the "
                "form ${NAME_OF_DEFINITION}, which will be replaced with their values.");
 
-    props.add (new TextPropertyComponent (getExtraLinkerFlags(), "Extra linker flags", 2048, true),
+    props.add (new TextPropertyComponent (getExtraLinkerFlags(), "Extra linker flags", 8192, true),
                "Extra command-line flags to be passed to the linker. You might want to use this for adding additional libraries. "
                "This string can contain references to preprocessor definitions in the form ${NAME_OF_VALUE}, which will be replaced with their values.");
 
-    props.add (new TextPropertyComponent (getExternalLibraries(), "External libraries to link", 2048, true),
+    props.add (new TextPropertyComponent (getExternalLibraries(), "External libraries to link", 8192, true),
                "Additional libraries to link (one per line). You should not add any platform specific decoration to these names. "
                "This string can contain references to preprocessor definitions in the form ${NAME_OF_VALUE}, which will be replaced with their values.");
 
@@ -238,7 +269,7 @@ StringPairArray ProjectExporter::getAllPreprocessorDefs (const ProjectExporter::
 {
     StringPairArray defs (mergePreprocessorDefs (config.getAllPreprocessorDefs(),
                                                  parsePreprocessorDefs (getExporterPreprocessorDefsString())));
-    defs.set (getExporterIdentifierMacro(), "1");
+    addDefaultPreprocessorDefs (defs);
     return defs;
 }
 
@@ -246,8 +277,15 @@ StringPairArray ProjectExporter::getAllPreprocessorDefs() const
 {
     StringPairArray defs (mergePreprocessorDefs (project.getPreprocessorDefs(),
                                                  parsePreprocessorDefs (getExporterPreprocessorDefsString())));
-    defs.set (getExporterIdentifierMacro(), "1");
+    addDefaultPreprocessorDefs (defs);
     return defs;
+}
+
+void ProjectExporter::addDefaultPreprocessorDefs (StringPairArray& defs) const
+{
+    defs.set (getExporterIdentifierMacro(), "1");
+    defs.set ("JUCE_APP_VERSION", project.getVersionString());
+    defs.set ("JUCE_APP_VERSION_HEX", project.getVersionAsHex());
 }
 
 String ProjectExporter::replacePreprocessorTokens (const ProjectExporter::BuildConfiguration& config, const String& sourceString) const
@@ -311,10 +349,10 @@ void ProjectExporter::removePathForModule (const String& moduleID)
     paths.removeChild (m, project.getUndoManagerFor (settings));
 }
 
-RelativePath ProjectExporter::getModuleFolderRelativeToProject (const String& moduleID, ProjectSaver& projectSaver) const
+RelativePath ProjectExporter::getModuleFolderRelativeToProject (const String& moduleID) const
 {
     if (project.getModules().shouldCopyModuleFilesLocally (moduleID).getValue())
-        return RelativePath (project.getRelativePathForFile (projectSaver.getLocalModuleFolder (moduleID)),
+        return RelativePath (project.getRelativePathForFile (project.getLocalModuleFolder (moduleID)),
                              RelativePath::projectFolder);
 
     String path (getPathForModuleString (moduleID));
@@ -369,9 +407,10 @@ static bool areCompatibleExporters (const ProjectExporter& p1, const ProjectExpo
 {
     return (p1.isVisualStudio() && p2.isVisualStudio())
         || (p1.isXcode() && p2.isXcode())
-        || (p1.isLinux() && p2.isLinux())
+        || (p1.isLinuxMakefile() && p2.isLinuxMakefile())
         || (p1.isAndroid() && p2.isAndroid())
-        || (p1.isCodeBlocks() && p2.isCodeBlocks());
+        || (p1.isCodeBlocksWindows() && p2.isCodeBlocksWindows())
+        || (p1.isCodeBlocksLinux() && p2.isCodeBlocksLinux());
 }
 
 void ProjectExporter::createDefaultModulePaths()
@@ -383,12 +422,31 @@ void ProjectExporter::createDefaultModulePaths()
             for (int i = project.getModules().getNumModules(); --i >= 0;)
             {
                 String modID (project.getModules().getModuleID(i));
-
                 getPathForModuleValue (modID) = exporter->getPathForModuleValue (modID).getValue();
             }
 
-            break;
+            return;
         }
+    }
+
+    for (Project::ExporterIterator exporter (project); exporter.next();)
+    {
+        if (exporter->canLaunchProject())
+        {
+            for (int i = project.getModules().getNumModules(); --i >= 0;)
+            {
+                String modID (project.getModules().getModuleID(i));
+                getPathForModuleValue (modID) = exporter->getPathForModuleValue (modID).getValue();
+            }
+
+            return;
+        }
+    }
+
+    for (int i = project.getModules().getNumModules(); --i >= 0;)
+    {
+        String modID (project.getModules().getModuleID(i));
+        getPathForModuleValue (modID) = "../../juce";
     }
 }
 
@@ -474,73 +532,82 @@ void ProjectExporter::createDefaultConfigs()
 
         config->getNameValue() = debugConfig ? "Debug" : "Release";
         config->isDebugValue() = debugConfig;
-        config->getOptimisationLevel() = debugConfig ? optimisationOff : optimiseMinSize;
+        config->getOptimisationLevel() = config->getDefaultOptimisationLevel();
         config->getTargetBinaryName() = project.getProjectFilenameRoot();
     }
 }
 
-Image ProjectExporter::getBigIcon() const
+Drawable* ProjectExporter::getBigIcon() const
 {
     return project.getMainGroup().findItemWithID (settings [Ids::bigIcon]).loadAsImageFile();
 }
 
-Image ProjectExporter::getSmallIcon() const
+Drawable* ProjectExporter::getSmallIcon() const
 {
     return project.getMainGroup().findItemWithID (settings [Ids::smallIcon]).loadAsImageFile();
 }
 
 Image ProjectExporter::getBestIconForSize (int size, bool returnNullIfNothingBigEnough) const
 {
-    Image im;
+    Drawable* im = nullptr;
 
-    const Image im1 (getSmallIcon());
-    const Image im2 (getBigIcon());
+    ScopedPointer<Drawable> im1 (getSmallIcon());
+    ScopedPointer<Drawable> im2 (getBigIcon());
 
-    if (im1.isValid() && im2.isValid())
+    if (im1 != nullptr && im2 != nullptr)
     {
-        if (im1.getWidth() >= size && im2.getWidth() >= size)
-            im = im1.getWidth() < im2.getWidth() ? im1 : im2;
-        else if (im1.getWidth() >= size)
+        if (im1->getWidth() >= size && im2->getWidth() >= size)
+            im = im1->getWidth() < im2->getWidth() ? im1 : im2;
+        else if (im1->getWidth() >= size)
             im = im1;
-        else if (im2.getWidth() >= size)
+        else if (im2->getWidth() >= size)
             im = im2;
-        else
-            return Image::null;
     }
     else
     {
-        im = im1.isValid() ? im1 : im2;
+        im = im1 != nullptr ? im1 : im2;
     }
 
-    if (returnNullIfNothingBigEnough && im.getWidth() < size && im.getHeight() < size)
-        return Image::null;
+    if (im == nullptr)
+        return Image();
 
-    return rescaleImageForIcon (im, size);
+    if (returnNullIfNothingBigEnough && im->getWidth() < size && im->getHeight() < size)
+        return Image();
+
+    return rescaleImageForIcon (*im, size);
 }
 
-Image ProjectExporter::rescaleImageForIcon (Image im, const int size)
+Image ProjectExporter::rescaleImageForIcon (Drawable& d, const int size)
 {
-    im = SoftwareImageType().convert (im);
+    if (DrawableImage* drawableImage = dynamic_cast<DrawableImage*> (&d))
+    {
+        Image im = SoftwareImageType().convert (drawableImage->getImage());
 
-    if (size == im.getWidth() && size == im.getHeight())
-        return im;
+        if (size == im.getWidth() && size == im.getHeight())
+            return im;
 
-    // (scale it down in stages for better resampling)
-    while (im.getWidth() > 2 * size && im.getHeight() > 2 * size)
-        im = im.rescaled (im.getWidth() / 2,
-                          im.getHeight() / 2);
+        // (scale it down in stages for better resampling)
+        while (im.getWidth() > 2 * size && im.getHeight() > 2 * size)
+            im = im.rescaled (im.getWidth() / 2,
+                              im.getHeight() / 2);
 
-    Image newIm (Image::ARGB, size, size, true, SoftwareImageType());
-    Graphics g (newIm);
-    g.drawImageWithin (im, 0, 0, size, size,
-                       RectanglePlacement::centred | RectanglePlacement::onlyReduceInSize, false);
-    return newIm;
+        Image newIm (Image::ARGB, size, size, true, SoftwareImageType());
+        Graphics g (newIm);
+        g.drawImageWithin (im, 0, 0, size, size,
+                           RectanglePlacement::centred | RectanglePlacement::onlyReduceInSize, false);
+        return newIm;
+    }
+
+    Image im (Image::ARGB, size, size, true, SoftwareImageType());
+    Graphics g (im);
+    d.drawWithin (g, im.getBounds().toFloat(), RectanglePlacement::centred, 1.0f);
+    return im;
 }
 
 
 //==============================================================================
-ProjectExporter::ConfigIterator::ConfigIterator (ProjectExporter& exporter_)
-    : index (-1), exporter (exporter_)
+ProjectExporter::ConfigIterator::ConfigIterator (ProjectExporter& e)
+    : index (-1), exporter (e)
 {
 }
 
@@ -568,8 +635,8 @@ bool ProjectExporter::ConstConfigIterator::next()
 }
 
 //==============================================================================
-ProjectExporter::BuildConfiguration::BuildConfiguration (Project& p, const ValueTree& configNode)
-   : config (configNode), project (p)
+ProjectExporter::BuildConfiguration::BuildConfiguration (Project& p, const ValueTree& configNode, const ProjectExporter& e)
+   : config (configNode), project (p), exporter (e)
 {
 }
 
@@ -581,25 +648,50 @@ String ProjectExporter::BuildConfiguration::getGCCOptimisationFlag() const
 {
     switch (getOptimisationLevelInt())
     {
-        case optimiseMaxSpeed:  return "3";
-        case optimiseMinSize:   return "s";
-        default:                return "0";
+        case gccO0:     return "0";
+        case gccO1:     return "1";
+        case gccO2:     return "2";
+        case gccO3:     return "3";
+        case gccOs:     return "s";
+        case gccOfast:  return "fast";
+        default:        break;
     }
+
+    return "0";
+}
+
+void ProjectExporter::BuildConfiguration::addGCCOptimisationProperty (PropertyListBuilder& props)
+{
+    static const char* optimisationLevels[] = { "-O0 (no optimisation)",
+                                                "-Os (minimise code size)",
+                                                "-O1 (fast)",
+                                                "-O2 (faster)",
+                                                "-O3 (fastest with safe optimisations)",
+                                                "-Ofast (uses aggressive optimisations)",
+                                                nullptr };
+
+    static const int optimisationLevelValues[] = { gccO0,
+                                                   gccOs,
+                                                   gccO1,
+                                                   gccO2,
+                                                   gccO3,
+                                                   gccOfast,
+                                                   0 };
+
+    props.add (new ChoicePropertyComponent (getOptimisationLevel(), "Optimisation",
+                                            StringArray (optimisationLevels),
+                                            Array<var> (optimisationLevelValues)),
+               "The optimisation level for this configuration");
 }
 
 void ProjectExporter::BuildConfiguration::createPropertyEditors (PropertyListBuilder& props)
 {
-    props.add (new TextPropertyComponent (getNameValue(), "Name", 96, false),
-               "The name of this configuration.");
+    if (exporter.supportsUserDefinedConfigurations())
+        props.add (new TextPropertyComponent (getNameValue(), "Name", 96, false),
+                   "The name of this configuration.");
 
     props.add (new BooleanPropertyComponent (isDebugValue(), "Debug mode", "Debugging enabled"),
                "If enabled, this means that the configuration should be built with debug synbols.");
-
-    const char* optimisationLevels[] = { "No optimisation", "Minimise size", "Maximise speed", 0 };
-    const int optimisationLevelValues[] = { optimisationOff, optimiseMinSize, optimiseMaxSpeed, 0 };
-    props.add (new ChoicePropertyComponent (getOptimisationLevel(), "Optimisation",
-                                            StringArray (optimisationLevels), Array<var> (optimisationLevelValues)),
-               "The optimisation level for this configuration");
 
     props.add (new TextPropertyComponent (getTargetBinaryName(), "Binary name", 256, false),
                "The filename to use for the destination binary executable file. If you don't add a suffix to this name, "
@@ -644,7 +736,7 @@ String ProjectExporter::BuildConfiguration::getGCCLibraryPathFlags() const
     const StringArray libraryPaths (getLibrarySearchPaths());
 
     for (int i = 0; i < libraryPaths.size(); ++i)
-        s << " -L" << addQuotesIfContainsSpaces (libraryPaths[i]);
+        s << " -L" << escapeSpaces (libraryPaths[i]);
 
     return s;
 }

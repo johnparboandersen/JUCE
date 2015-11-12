@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -115,8 +115,8 @@ public:
 
     void valueTreePropertyChanged (ValueTree&, const Identifier&) override {}
     void valueTreeChildAdded (ValueTree&, ValueTree&) override {}
-    void valueTreeChildRemoved (ValueTree&, ValueTree&) override {}
-    void valueTreeChildOrderChanged (ValueTree&) override {}
+    void valueTreeChildRemoved (ValueTree&, ValueTree&, int) override {}
+    void valueTreeChildOrderChanged (ValueTree&, int, int) override {}
     void valueTreeParentChanged (ValueTree&) override {}
 
     virtual bool isProjectSettings() const          { return false; }
@@ -139,8 +139,8 @@ private:
     public:
         PropertyPanelViewport (Component* content)
         {
-            addAndMakeVisible (&viewport);
-            addAndMakeVisible (&rolloverHelp);
+            addAndMakeVisible (viewport);
+            addAndMakeVisible (rolloverHelp);
             viewport.setViewedComponent (content, true);
         }
 
@@ -174,6 +174,7 @@ public:
         exportersTree.addListener (this);
     }
 
+    bool isRoot() const override              { return true; }
     bool isProjectSettings() const override   { return true; }
     String getRenamingName() const override   { return getDisplayName(); }
     String getDisplayName() const override    { return project.getTitle(); }
@@ -197,25 +198,8 @@ public:
 
     void showPopupMenu() override
     {
-        PopupMenu menu;
-
-        const StringArray exporters (ProjectExporter::getExporterNames());
-
-        for (int i = 0; i < exporters.size(); ++i)
-            menu.addItem (i + 1, "Create a new " + exporters[i] + " target");
-
-        launchPopupMenu (menu);
-    }
-
-    void handlePopupMenuResult (int resultCode) override
-    {
-        if (resultCode > 0)
-        {
-            String exporterName (ProjectExporter::getExporterNames() [resultCode - 1]);
-
-            if (exporterName.isNotEmpty())
-                project.addNewExporter (exporterName);
-        }
+        if (ProjectContentComponent* pcc = getProjectContentComponent())
+            pcc->showNewExporterMenu();
     }
 
     bool isInterestedInDragSource (const DragAndDropTarget::SourceDetails& dragSourceDetails) override
@@ -230,9 +214,9 @@ public:
     }
 
     //==============================================================================
-    void valueTreeChildAdded (ValueTree& parentTree, ValueTree&) override   { refreshIfNeeded (parentTree); }
-    void valueTreeChildRemoved (ValueTree& parentTree, ValueTree&) override { refreshIfNeeded (parentTree); }
-    void valueTreeChildOrderChanged (ValueTree& parentTree) override        { refreshIfNeeded (parentTree); }
+    void valueTreeChildAdded (ValueTree& parentTree, ValueTree&) override         { refreshIfNeeded (parentTree); }
+    void valueTreeChildRemoved (ValueTree& parentTree, ValueTree&, int) override  { refreshIfNeeded (parentTree); }
+    void valueTreeChildOrderChanged (ValueTree& parentTree, int, int) override    { refreshIfNeeded (parentTree); }
 
     void refreshIfNeeded (ValueTree& changedTree)
     {
@@ -251,7 +235,7 @@ private:
     public:
         SettingsComp (Project& p)  : project (p)
         {
-            addAndMakeVisible (&group);
+            addAndMakeVisible (group);
 
             updatePropertyList();
             project.addChangeListener (this);

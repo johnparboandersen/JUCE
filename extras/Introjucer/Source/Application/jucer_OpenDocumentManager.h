@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_OPENDOCUMENTMANAGER_JUCEHEADER__
-#define __JUCER_OPENDOCUMENTMANAGER_JUCEHEADER__
+#ifndef JUCER_OPENDOCUMENTMANAGER_H_INCLUDED
+#define JUCER_OPENDOCUMENTMANAGER_H_INCLUDED
 
 #include "../Project/jucer_Project.h"
 
@@ -90,7 +90,8 @@ public:
         DocumentCloseListener() {}
         virtual ~DocumentCloseListener() {}
 
-        virtual void documentAboutToClose (Document* document) = 0;
+        // return false to force it to stop.
+        virtual bool documentAboutToClose (Document* document) = 0;
     };
 
     void addListener (DocumentCloseListener*);
@@ -107,13 +108,13 @@ public:
         virtual Document* openFile (Project* project, const File& file) = 0;
     };
 
-    void registerType (DocumentType* type);
+    void registerType (DocumentType* type, int index = -1);
 
 
 private:
-    OwnedArray <DocumentType> types;
-    OwnedArray <Document> documents;
-    Array <DocumentCloseListener*> listeners;
+    OwnedArray<DocumentType> types;
+    OwnedArray<Document> documents;
+    Array<DocumentCloseListener*> listeners;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OpenDocumentManager)
 };
@@ -143,10 +144,10 @@ public:
     XmlElement* createXML() const;
 
 private:
-    void documentAboutToClose (OpenDocumentManager::Document*);
+    bool documentAboutToClose (OpenDocumentManager::Document*);
 
-    Array <OpenDocumentManager::Document*> previousDocs, nextDocs;
+    Array<OpenDocumentManager::Document*> previousDocs, nextDocs;
 };
 
 
-#endif   // __JUCER_OPENDOCUMENTMANAGER_JUCEHEADER__
+#endif   // JUCER_OPENDOCUMENTMANAGER_H_INCLUDED

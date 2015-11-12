@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -65,13 +65,13 @@ public:
         return true;
     }
 
-    String getCreationParameters (Component* component)
+    String getCreationParameters (GeneratedCode& code, Component* component)
     {
-        GroupComponent* g = dynamic_cast <GroupComponent*> (component);
+        GroupComponent* g = dynamic_cast<GroupComponent*> (component);
 
-        return quotedString (component->getName())
+        return quotedString (component->getName(), false)
                 + ",\n"
-                + quotedString (g->getText());
+                + quotedString (g->getText(), code.shouldUseTransMacro());
     }
 
     void fillInCreationCode (GeneratedCode& code, Component* component, const String& memberVariableName)
@@ -97,14 +97,14 @@ public:
         code.constructorCode += s;
     }
 
-    void getEditableProperties (Component* component, JucerDocument& document, Array <PropertyComponent*>& properties)
+    void getEditableProperties (Component* component, JucerDocument& document, Array<PropertyComponent*>& props)
     {
-        ComponentTypeHandler::getEditableProperties (component, document, properties);
+        ComponentTypeHandler::getEditableProperties (component, document, props);
 
-        properties.add (new GroupTitleProperty ((GroupComponent*) component, document));
-        properties.add (new GroupJustificationProperty ((GroupComponent*) component, document));
+        props.add (new GroupTitleProperty ((GroupComponent*) component, document));
+        props.add (new GroupJustificationProperty ((GroupComponent*) component, document));
 
-        addColourProperties (component, document, properties);
+        addColourProperties (component, document, props);
     }
 
 private:
@@ -116,13 +116,13 @@ private:
             : ComponentTextProperty <GroupComponent> ("text", 200, false, comp, doc)
         {}
 
-        void setText (const String& newText)
+        void setText (const String& newText) override
         {
             document.perform (new GroupTitleChangeAction (component, *document.getComponentLayout(), newText),
                               "Change group title");
         }
 
-        String getText() const
+        String getText() const override
         {
             return component->getText();
         }
@@ -131,8 +131,8 @@ private:
         class GroupTitleChangeAction  : public ComponentUndoableAction <GroupComponent>
         {
         public:
-            GroupTitleChangeAction (GroupComponent* const comp, ComponentLayout& layout, const String& newName_)
-                : ComponentUndoableAction <GroupComponent> (comp, layout),
+            GroupTitleChangeAction (GroupComponent* const comp, ComponentLayout& l, const String& newName_)
+                : ComponentUndoableAction <GroupComponent> (comp, l),
                   newName (newName_)
             {
                 oldName = comp->getText();
@@ -196,8 +196,8 @@ private:
         class GroupJustifyChangeAction  : public ComponentUndoableAction <GroupComponent>
         {
         public:
-            GroupJustifyChangeAction (GroupComponent* const comp, ComponentLayout& layout, Justification newState_)
-                : ComponentUndoableAction <GroupComponent> (comp, layout),
+            GroupJustifyChangeAction (GroupComponent* const comp, ComponentLayout& l, Justification newState_)
+                : ComponentUndoableAction <GroupComponent> (comp, l),
                   newState (newState_),
                   oldState (comp->getTextLabelPosition())
             {

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_JUCERDOCUMENT_JUCEHEADER__
-#define __JUCER_JUCERDOCUMENT_JUCEHEADER__
+#ifndef JUCER_JUCERDOCUMENT_H_INCLUDED
+#define JUCER_JUCERDOCUMENT_H_INCLUDED
 
 #include "../Application/jucer_OpenDocumentManager.h"
 #include "../Code Editor/jucer_SourceCodeEditor.h"
@@ -35,7 +35,8 @@
 //==============================================================================
 class JucerDocument  : public ChangeBroadcaster,
                        private Timer,
-                       private CodeDocument::Listener
+                       private CodeDocument::Listener,
+                       private OpenDocumentManager::DocumentCloseListener
 {
 public:
     JucerDocument (SourceCodeDocument* cpp);
@@ -132,6 +133,8 @@ public:
     String getTemplateFile() const                                          { return templateFile; }
     void setTemplateFile (const String&);
 
+    static bool shouldUseTransMacro() noexcept                              { return true; }
+
 protected:
     SourceCodeDocument* cpp;
 
@@ -167,9 +170,10 @@ private:
     void codeDocumentTextInserted (const String& newText, int insertIndex) override;
     void codeDocumentTextDeleted (int startIndex, int endIndex) override;
     void userEditedCpp();
+    bool documentAboutToClose (OpenDocumentManager::Document*) override;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (JucerDocument);
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (JucerDocument)
 };
 
 
-#endif   // __JUCER_JUCERDOCUMENT_JUCEHEADER__
+#endif   // JUCER_JUCERDOCUMENT_H_INCLUDED

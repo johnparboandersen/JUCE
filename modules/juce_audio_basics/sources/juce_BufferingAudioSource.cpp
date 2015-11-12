@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -31,7 +31,6 @@ BufferingAudioSource::BufferingAudioSource (PositionableAudioSource* s,
       backgroundThread (thread),
       numberOfSamplesToBuffer (jmax (1024, bufferSizeSamples)),
       numberOfChannels (numChannels),
-      buffer (numChannels, 0),
       bufferValidStart (0),
       bufferValidEnd (0),
       nextPlayPos (0),

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,10 +22,37 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_COMMONHEADERS_JUCEHEADER__
-#define __JUCER_COMMONHEADERS_JUCEHEADER__
+#ifndef JUCER_COMMONHEADERS_H_INCLUDED
+#define JUCER_COMMONHEADERS_H_INCLUDED
 
+//==============================================================================
+struct TargetOS
+{
+    enum OS
+    {
+        windows = 0,
+        osx,
+        linux,
+        unknown
+    };
 
+    static OS getThisOS() noexcept
+    {
+       #if JUCE_WINDOWS
+        return windows;
+       #elif JUCE_MAC
+        return osx;
+       #elif JUCE_LINUX
+        return linux;
+       #else
+        return unknown;
+       #endif
+    }
+};
+
+typedef TargetOS::OS DependencyPathOS;
+
+//==============================================================================
 #include "../Utility/jucer_StoredSettings.h"
 #include "../Utility/jucer_Icons.h"
 #include "../Utility/jucer_MiscUtilities.h"
@@ -41,14 +68,18 @@ const char* const projectItemDragType   = "Project Items";
 const char* const drawableItemDragType  = "Drawable Items";
 const char* const componentItemDragType = "Components";
 
-const char* const sourceFileExtensions          = "cpp;mm;m;c;cc;cxx";
+const char* const sourceFileExtensions          = "cpp;mm;m;c;cc;cxx;swift;s;asm";
 const char* const headerFileExtensions          = "h;hpp;hxx;hh;inl";
-const char* const sourceOrHeaderFileExtensions  = "cpp;mm;m;c;cc;cxx;h;hpp;hxx;hh;inl";
+const char* const cOrCppFileExtensions          = "cpp;cc;cxx;c";
+const char* const cppFileExtensions             = "cpp;cc;cxx";
+const char* const objCFileExtensions            = "mm;m";
+const char* const asmFileExtensions             = "s;S;asm";
+const char* const sourceOrHeaderFileExtensions  = "cpp;mm;m;c;cc;cxx;swift;s;S;asm;h;hpp;hxx;hh;inl";
+const char* const fileTypesToCompileByDefault   = "cpp;mm;c;m;cc;cxx;swift;s;S;asm;r";
 
 enum ColourIds
 {
     mainBackgroundColourId          = 0x2340000,
-    treeviewHighlightColourId       = 0x2340002,
 };
 
-#endif   // __JUCER_COMMONHEADERS_JUCEHEADER__
+#endif   // JUCER_COMMONHEADERS_H_INCLUDED

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_JUCERTREEVIEWBASE_JUCEHEADER__
-#define __JUCER_JUCERTREEVIEWBASE_JUCEHEADER__
+#ifndef JUCER_JUCERTREEVIEWBASE_H_INCLUDED
+#define JUCER_JUCERTREEVIEWBASE_H_INCLUDED
 
 #include "../jucer_Headers.h"
 class ProjectContentComponent;
@@ -37,10 +37,9 @@ public:
     ~JucerTreeViewBase();
 
     int getItemWidth() const override                   { return -1; }
-    int getItemHeight() const override                  { return 20; }
+    int getItemHeight() const override                  { return isRoot() ? 23 : 20; }
 
-    void paintItem (Graphics& g, int width, int height) override;
-    void paintOpenCloseButton (Graphics& g, int width, int height, bool isMouseOver) override;
+    void paintOpenCloseButton (Graphics&, const Rectangle<float>& area, Colour backgroundColour, bool isMouseOver) override;
     Component* createItemComponent() override;
     void itemClicked (const MouseEvent& e) override;
     void itemSelectionChanged (bool isNowSelected) override;
@@ -49,17 +48,18 @@ public:
     void cancelDelayedSelectionTimer();
 
     //==============================================================================
+    virtual bool isRoot() const                                 { return false; }
     virtual Font getFont() const;
     virtual String getRenamingName() const = 0;
     virtual String getDisplayName() const = 0;
     virtual void setName (const String& newName) = 0;
     virtual bool isMissing() = 0;
     virtual Icon getIcon() const = 0;
-    virtual float getIconSize() const;
-    virtual bool isIconCrossedOut() const               { return false; }
+    virtual bool isIconCrossedOut() const                       { return false; }
+    virtual void paintIcon (Graphics& g, Rectangle<int> area)   { getIcon().draw (g, area.reduced (2).toFloat(), isIconCrossedOut()); }
     virtual void paintContent (Graphics& g, const Rectangle<int>& area);
-    virtual int getMillisecsAllowedForDragGesture()     { return 120; };
-    virtual File getDraggableFile() const               { return File::nonexistent; }
+    virtual int getMillisecsAllowedForDragGesture()             { return 120; };
+    virtual File getDraggableFile() const                       { return File(); }
 
     void refreshSubItems();
     virtual void deleteItem();
@@ -93,13 +93,13 @@ public:
 
     int textX;
 
-protected:
-    ProjectContentComponent* getProjectContentComponent() const;
-    virtual void addSubItems() {}
-
     Colour getBackgroundColour() const;
     Colour getContrastingColour (float contrast) const;
     Colour getContrastingColour (Colour targetColour, float minContrast) const;
+
+protected:
+    ProjectContentComponent* getProjectContentComponent() const;
+    virtual void addSubItems() {}
 
 private:
     class ItemSelectionTimer;
@@ -119,7 +119,7 @@ public:
     TreePanelBase (const Project* p, const String& treeviewID)
         : project (p), opennessStateKey (treeviewID)
     {
-        addAndMakeVisible (&tree);
+        addAndMakeVisible (tree);
         tree.setRootItemVisible (true);
         tree.setDefaultOpenness (true);
         tree.setColour (TreeView::backgroundColourId, Colours::transparentBlack);
@@ -195,23 +195,41 @@ public:
     void paint (Graphics& g) override
     {
         g.setColour (Colours::black);
-        paintIcon (g);
-        item.paintContent (g, Rectangle<int> (item.textX, 0, getWidth() - item.textX, getHeight()));
-    }
 
-    void paintIcon (Graphics& g)
-    {
-        item.getIcon().draw (g, Rectangle<float> (4.0f, 2.0f, item.getIconSize(), getHeight() - 4.0f),
-                             item.isIconCrossedOut());
+        Rectangle<int> localBounds (getLocalBounds());
+
+        const int border = 5;
+        localBounds.removeFromLeft (border);
+
+        item.paintIcon (g, localBounds.removeFromLeft (15));
+
+        localBounds.removeFromLeft  (border);
+        localBounds.removeFromRight (border);
+
+        item.paintContent (g, localBounds);
     }
 
     void resized() override
     {
-        item.textX = (int) item.getIconSize() + 8;
+        item.textX = getHeight() + 4;
+
+        Rectangle<int> r (getLocalBounds());
+
+        for (int i = buttons.size(); --i >= 0;)
+            buttons.getUnchecked(i)->setBounds (r.removeFromRight (r.getHeight()));
+    }
+
+    void addRightHandButton (Component* button)
+    {
+        buttons.add (button);
+        addAndMakeVisible (button);
     }
 
     JucerTreeViewBase& item;
+    OwnedArray<Component> buttons;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TreeItemComponent)
 };
 
 
-#endif   // __JUCER_JUCERTREEVIEWBASE_JUCEHEADER__
+#endif   // JUCER_JUCERTREEVIEWBASE_H_INCLUDED

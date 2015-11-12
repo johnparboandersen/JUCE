@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -40,14 +40,16 @@ namespace CommandIDs
         saveAll                = 0x200080,
         openInIDE              = 0x200072,
         saveAndOpenInIDE       = 0x200073,
+        createNewExporter      = 0x20007d,
 
         showUTF8Tool           = 0x200076,
-        showAppearanceSettings = 0x200077,
+        showGlobalPreferences  = 0x200077,
         showConfigPanel        = 0x200074,
         showFilePanel          = 0x200078,
         showTranslationTool    = 0x200079,
         showProjectSettings    = 0x20007a,
         showProjectModules     = 0x20007b,
+        showSVGPathTool        = 0x20007c,
 
         closeWindow            = 0x201001,
         closeAllDocuments      = 0x201000,

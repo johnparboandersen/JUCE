@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the juce_core module of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission to use, copy, modify, and/or distribute this software for any purpose with
    or without fee is hereby granted, provided that the above copyright notice and this
@@ -84,17 +84,17 @@ public:
         because there's no other way to represent unicode strings in a way that isn't dependent
         on the compiler, source code editor and platform.
 
-        This will use up the the first maxChars characters of the string (or less if the string
+        This will use up to the first maxChars characters of the string (or less if the string
         is actually shorter).
     */
     String (const char* text, size_t maxChars);
 
-    /** Creates a string from a whcar_t character string.
+    /** Creates a string from a wchar_t character string.
         Depending on the platform, this may be treated as either UTF-32 or UTF-16.
     */
     String (const wchar_t* text);
 
-    /** Creates a string from a whcar_t character string.
+    /** Creates a string from a wchar_t character string.
         Depending on the platform, this may be treated as either UTF-32 or UTF-16.
     */
     String (const wchar_t* text, size_t maxChars);
@@ -136,6 +136,9 @@ public:
     /** Creates a string from a UTF-8 encoded std::string. */
     String (const std::string&);
 
+    /** Creates a string from a StringRef */
+    String (StringRef);
+
     //==============================================================================
     /** Creates a string from a single character. */
     static String charToString (juce_wchar character);
@@ -167,7 +170,7 @@ public:
     typedef CharPointer_UTF32 CharPointerType;
    #elif (JUCE_STRING_UTF_TYPE == 16)
     typedef CharPointer_UTF16 CharPointerType;
-   #elif (JUCE_STRING_UTF_TYPE == 8)
+   #elif (DOXYGEN || JUCE_STRING_UTF_TYPE == 8)
     typedef CharPointer_UTF8  CharPointerType;
    #else
     #error "You must set the value of JUCE_STRING_UTF_TYPE to be either 8, 16, or 32!"
@@ -179,6 +182,9 @@ public:
 
     /** Generates a probably-unique 64-bit hashcode from this string. */
     int64 hashCode64() const noexcept;
+
+    /** Generates a probably-unique hashcode from this string. */
+    size_t hash() const noexcept;
 
     /** Returns the number of characters in the string. */
     int length() const noexcept;
@@ -199,8 +205,16 @@ public:
     String& operator+= (const char* textToAppend);
     /** Appends another string at the end of this one. */
     String& operator+= (const wchar_t* textToAppend);
+    /** Appends another string at the end of this one. */
+    String& operator+= (StringRef textToAppend);
     /** Appends a decimal number at the end of this string. */
     String& operator+= (int numberToAppend);
+    /** Appends a decimal number at the end of this string. */
+    String& operator+= (long numberToAppend);
+    /** Appends a decimal number at the end of this string. */
+    String& operator+= (int64 numberToAppend);
+    /** Appends a decimal number at the end of this string. */
+    String& operator+= (uint64 numberToAppend);
     /** Appends a character at the end of this string. */
     String& operator+= (char characterToAppend);
     /** Appends a character at the end of this string. */
@@ -225,6 +239,32 @@ public:
     void appendCharPointer (const CharPointerType startOfTextToAppend,
                             const CharPointerType endOfTextToAppend);
 
+    /** Appends a string to the end of this one.
+
+        @param startOfTextToAppend  the start of the string to add. This must not be a nullptr
+        @param endOfTextToAppend    the end of the string to add. This must not be a nullptr
+    */
+    template <class CharPointer>
+    void appendCharPointer (const CharPointer startOfTextToAppend,
+                            const CharPointer endOfTextToAppend)
+    {
+        jassert (startOfTextToAppend.getAddress() != nullptr && endOfTextToAppend.getAddress() != nullptr);
+
+        size_t extraBytesNeeded = 0, numChars = 1;
+
+        for (CharPointer t (startOfTextToAppend); t != endOfTextToAppend && ! t.isEmpty(); ++numChars)
+            extraBytesNeeded += CharPointerType::getBytesRequiredFor (t.getAndAdvance());
+
+        if (extraBytesNeeded > 0)
+        {
+            const size_t byteOffsetOfNull = getByteOffsetOfEnd();
+
+            preallocateBytes (byteOffsetOfNull + extraBytesNeeded);
+            CharPointerType (addBytesToPointer (text.getAddress(), (int) byteOffsetOfNull))
+                .writeWithCharLimit (startOfTextToAppend, (int) numChars);
+        }
+    }
+
     /** Appends a string to the end of this one. */
     void appendCharPointer (const CharPointerType textToAppend);
 
@@ -238,21 +278,18 @@ public:
     {
         if (textToAppend.getAddress() != nullptr)
         {
-            size_t extraBytesNeeded = 0;
-            size_t numChars = 0;
+            size_t extraBytesNeeded = 0, numChars = 1;
 
-            for (CharPointer t (textToAppend); numChars < maxCharsToTake && ! t.isEmpty();)
-            {
+            for (CharPointer t (textToAppend); numChars <= maxCharsToTake && ! t.isEmpty(); ++numChars)
                 extraBytesNeeded += CharPointerType::getBytesRequiredFor (t.getAndAdvance());
-                ++numChars;
-            }
 
-            if (numChars > 0)
+            if (extraBytesNeeded > 0)
             {
                 const size_t byteOffsetOfNull = getByteOffsetOfEnd();
 
                 preallocateBytes (byteOffsetOfNull + extraBytesNeeded);
-                CharPointerType (addBytesToPointer (text.getAddress(), (int) byteOffsetOfNull)).writeWithCharLimit (textToAppend, (int) (numChars + 1));
+                CharPointerType (addBytesToPointer (text.getAddress(), (int) byteOffsetOfNull))
+                    .writeWithCharLimit (textToAppend, (int) numChars);
             }
         }
     }
@@ -261,21 +298,7 @@ public:
     template <class CharPointer>
     void appendCharPointer (const CharPointer textToAppend)
     {
-        if (textToAppend.getAddress() != nullptr)
-        {
-            size_t extraBytesNeeded = 0;
-
-            for (CharPointer t (textToAppend); ! t.isEmpty();)
-                extraBytesNeeded += CharPointerType::getBytesRequiredFor (t.getAndAdvance());
-
-            if (extraBytesNeeded > 0)
-            {
-                const size_t byteOffsetOfNull = getByteOffsetOfEnd();
-
-                preallocateBytes (byteOffsetOfNull + extraBytesNeeded);
-                CharPointerType (addBytesToPointer (text.getAddress(), (int) byteOffsetOfNull)).writeAll (textToAppend);
-            }
-        }
+        appendCharPointer (textToAppend, std::numeric_limits<size_t>::max());
     }
 
     //==============================================================================
@@ -285,13 +308,16 @@ public:
         Note that there's also an isNotEmpty() method to help write readable code.
         @see containsNonWhitespaceChars()
     */
-    inline bool isEmpty() const noexcept                    { return text[0] == 0; }
+    inline bool isEmpty() const noexcept                    { return text.isEmpty(); }
 
     /** Returns true if the string contains at least one character.
         Note that there's also an isEmpty() method to help write readable code.
         @see containsNonWhitespaceChars()
     */
-    inline bool isNotEmpty() const noexcept                 { return text[0] != 0; }
+    inline bool isNotEmpty() const noexcept                 { return ! text.isEmpty(); }
+
+    /** Resets this string to be empty. */
+    void clear() noexcept;
 
     /** Case-insensitive comparison with another string. */
     bool equalsIgnoreCase (const String& other) const noexcept;
@@ -329,15 +355,15 @@ public:
     */
     int compareIgnoreCase (const String& other) const noexcept;
 
-    /** Lexicographic comparison with another string.
+    /** Compares two strings, taking into account textual characteristics like numbers and spaces.
 
-        The comparison used here is case-insensitive and ignores leading non-alphanumeric
-        characters, making it good for sorting human-readable strings.
+        This comparison is case-insensitive and can detect words and embedded numbers in the
+        strings, making it good for sorting human-readable lists of things like filenames.
 
         @returns     0 if the two strings are identical; negative if this string comes before
                      the other one alphabetically, or positive if it comes after it.
     */
-    int compareLexicographically (const String& other) const noexcept;
+    int compareNatural (StringRef other) const noexcept;
 
     /** Tests whether the string begins with another string.
         If the parameter is an empty string, this will always return true.
@@ -915,6 +941,16 @@ public:
     */
     explicit String (uint64 largeIntegerValue);
 
+    /** Creates a string containing this signed long integer as a decimal number.
+        @see getIntValue, getFloatValue, getDoubleValue, toHexString
+    */
+    explicit String (long decimalInteger);
+
+    /** Creates a string containing this unsigned long integer as a decimal number.
+        @see getIntValue, getFloatValue, getDoubleValue, toHexString
+    */
+    explicit String (unsigned long decimalInteger);
+
     /** Creates a string representing this floating-point number.
         @param floatValue               the value to convert to a string
         @see getDoubleValue, getIntValue
@@ -1187,19 +1223,24 @@ public:
 
     //==============================================================================
    #if JUCE_MAC || JUCE_IOS || DOXYGEN
-    /** MAC ONLY - Creates a String from an OSX CFString. */
+    /** OSX ONLY - Creates a String from an OSX CFString. */
     static String fromCFString (CFStringRef cfString);
 
-    /** MAC ONLY - Converts this string to a CFString.
+    /** OSX ONLY - Converts this string to a CFString.
         Remember that you must use CFRelease() to free the returned string when you're
         finished with it.
     */
     CFStringRef toCFString() const;
 
-    /** MAC ONLY - Returns a copy of this string in which any decomposed unicode characters have
+    /** OSX ONLY - Returns a copy of this string in which any decomposed unicode characters have
         been converted to their precomposed equivalents. */
     String convertToPrecomposedUnicode() const;
    #endif
+
+    /** Returns the number of String objects which are currently sharing the same internal
+        data as this one.
+    */
+    int getReferenceCount() const noexcept;
 
 private:
     //==============================================================================
@@ -1208,12 +1249,11 @@ private:
     //==============================================================================
     struct PreallocationBytes
     {
-        explicit PreallocationBytes (size_t);
+        explicit PreallocationBytes (size_t) noexcept;
         size_t numBytes;
     };
 
     explicit String (const PreallocationBytes&); // This constructor preallocates a certain amount of memory
-    void appendFixedLength (const char* text, int numExtraChars);
     size_t getByteOffsetOfEnd() const noexcept;
     JUCE_DEPRECATED (String (const String&, size_t));
 
@@ -1268,6 +1308,8 @@ JUCE_API String& JUCE_CALLTYPE operator<< (String& string1, const char* string2)
 JUCE_API String& JUCE_CALLTYPE operator<< (String& string1, const wchar_t* string2);
 /** Appends a string to the end of the first one. */
 JUCE_API String& JUCE_CALLTYPE operator<< (String& string1, const String& string2);
+/** Appends a string to the end of the first one. */
+JUCE_API String& JUCE_CALLTYPE operator<< (String& string1, StringRef string2);
 
 /** Appends a decimal number at the end of a string. */
 JUCE_API String& JUCE_CALLTYPE operator<< (String& string1, short number);
@@ -1277,6 +1319,8 @@ JUCE_API String& JUCE_CALLTYPE operator<< (String& string1, int number);
 JUCE_API String& JUCE_CALLTYPE operator<< (String& string1, long number);
 /** Appends a decimal number at the end of a string. */
 JUCE_API String& JUCE_CALLTYPE operator<< (String& string1, int64 number);
+/** Appends a decimal number at the end of a string. */
+JUCE_API String& JUCE_CALLTYPE operator<< (String& string1, uint64 number);
 /** Appends a decimal number at the end of a string. */
 JUCE_API String& JUCE_CALLTYPE operator<< (String& string1, float number);
 /** Appends a decimal number at the end of a string. */

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_PROJECTCONTENTCOMPONENT_JUCEHEADER__
-#define __JUCER_PROJECTCONTENTCOMPONENT_JUCEHEADER__
+#ifndef JUCER_PROJECTCONTENTCOMPONENT_H_INCLUDED
+#define JUCER_PROJECTCONTENTCOMPONENT_H_INCLUDED
 
 #include "jucer_Project.h"
 #include "../Application/jucer_OpenDocumentManager.h"
@@ -62,6 +62,7 @@ public:
     void hideEditor();
     bool setEditorComponent (Component* editor, OpenDocumentManager::Document* doc);
     Component* getEditorComponent() const                       { return contentView; }
+    Component& getTabsComponent()                               { return treeViewTabs; }
 
     bool goToPreviousFile();
     bool goToNextFile();
@@ -70,8 +71,9 @@ public:
 
     bool saveProject();
     void closeProject();
-    void openInIDE();
-    void openInIDE (const String& exporterName);
+    void openInIDE (bool saveFirst);
+    void openInIDE (int exporterIndex, bool saveFirst);
+    void showNewExporterMenu();
 
     void showFilesTab();
     void showConfigTab();
@@ -92,11 +94,14 @@ public:
 
     StringArray getExportersWhichCanLaunch() const;
 
+    static void getSelectedProjectItemsBeingDragged (const DragAndDropTarget::SourceDetails& dragSourceDetails,
+                                                     OwnedArray<Project::Item>& selectedNodes);
+
     //==============================================================================
     ApplicationCommandTarget* getNextCommandTarget() override;
-    void getAllCommands (Array <CommandID>& commands) override;
-    void getCommandInfo (CommandID commandID, ApplicationCommandInfo& result) override;
-    bool perform (const InvocationInfo& info) override;
+    void getAllCommands (Array<CommandID>&) override;
+    void getCommandInfo (CommandID, ApplicationCommandInfo&) override;
+    bool perform (const InvocationInfo&) override;
 
     void paint (Graphics&) override;
     void paintOverChildren (Graphics&) override;
@@ -108,17 +113,15 @@ protected:
     Project* project;
     OpenDocumentManager::Document* currentDocument;
     RecentDocumentList recentDocumentList;
-    ScopedPointer<Component> logo;
-    ScopedPointer<Component> translationTool;
+    ScopedPointer<Component> logo, translationTool, contentView;
 
     TabbedComponent treeViewTabs;
     ScopedPointer<ResizableEdgeComponent> resizerBar;
-    ScopedPointer<Component> contentView;
 
     ComponentBoundsConstrainer treeSizeConstrainer;
     BubbleMessageComponent bubbleMessage;
 
-    void documentAboutToClose (OpenDocumentManager::Document*) override;
+    bool documentAboutToClose (OpenDocumentManager::Document*) override;
     void changeListenerCallback (ChangeBroadcaster*) override;
     void showTranslationTool();
 
@@ -126,4 +129,4 @@ protected:
 };
 
 
-#endif   // __JUCER_PROJECTCONTENTCOMPONENT_JUCEHEADER__
+#endif   // JUCER_PROJECTCONTENTCOMPONENT_H_INCLUDED

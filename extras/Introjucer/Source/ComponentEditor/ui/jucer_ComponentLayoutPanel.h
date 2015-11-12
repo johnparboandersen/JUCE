@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_COMPONENTLAYOUTPANEL_JUCEHEADER__
-#define __JUCER_COMPONENTLAYOUTPANEL_JUCEHEADER__
+#ifndef JUCER_COMPONENTLAYOUTPANEL_H_INCLUDED
+#define JUCER_COMPONENTLAYOUTPANEL_H_INCLUDED
 
 #include "jucer_ComponentLayoutEditor.h"
 #include "jucer_EditingPanelBase.h"
@@ -62,7 +62,7 @@ public:
         return ((ComponentLayoutEditor*) editor)->createComponentLayerSnapshot();
     }
 
-    ComponentLayout& getLayout() const noexcept         { return layout;}
+    ComponentLayout& layout;
 
 private:
     class LayoutPropsPanel  : public Component,
@@ -73,8 +73,7 @@ private:
             : document (doc), layout (l)
         {
             layout.getSelectedSet().addChangeListener (this);
-
-            addAndMakeVisible (&propsPanel);
+            addAndMakeVisible (propsPanel);
         }
 
         ~LayoutPropsPanel()
@@ -115,9 +114,7 @@ private:
         ComponentLayout& layout;
         PropertyPanel propsPanel;
     };
-
-    ComponentLayout& layout;
 };
 
 
-#endif   // __JUCER_COMPONENTLAYOUTPANEL_JUCEHEADER__
+#endif   // JUCER_COMPONENTLAYOUTPANEL_H_INCLUDED

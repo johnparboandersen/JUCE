@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -44,14 +44,16 @@ class OpenGLContext::NativeContext
 {
 public:
     NativeContext (Component& component,
-                   const OpenGLPixelFormat& pixelFormat,
-                   void* contextToShareWith,
-                   bool useMultisampling)
-        : frameBufferHandle (0), colorBufferHandle (0), depthBufferHandle (0),
-          msaaColorHandle (0), msaaBufferHandle (0),
+                   const OpenGLPixelFormat& pixFormat,
+                   void* contextToShare,
+                   bool multisampling,
+                   OpenGLVersion version)
+        : context (nil), openGLversion (version),
+          frameBufferHandle (0), colorBufferHandle (0),
+          depthBufferHandle (0), msaaColorHandle (0), msaaBufferHandle (0),
           lastWidth (0), lastHeight (0), needToRebuildBuffers (false),
-          swapFrames (0), useDepthBuffer (pixelFormat.depthBufferBits > 0),
-          useMSAA (useMultisampling)
+          swapFrames (0), useDepthBuffer (pixFormat.depthBufferBits > 0),
+          useMSAA (multisampling)
     {
         JUCE_AUTORELEASEPOOL
         {
@@ -69,19 +71,27 @@ public:
             view.userInteractionEnabled = NO;
 
             glLayer = (CAEAGLLayer*) [view layer];
-            glLayer.contentsScale = Desktop::getInstance().getDisplays().getMainDisplay().scale;
+            glLayer.contentsScale = (CGFloat) Desktop::getInstance().getDisplays().getMainDisplay().scale;
             glLayer.opaque = true;
 
             [((UIView*) peer->getNativeHandle()) addSubview: view];
 
-            context = [EAGLContext alloc];
-
-            const NSUInteger type = kEAGLRenderingAPIOpenGLES2;
-
-            if (contextToShareWith != nullptr)
-                [context initWithAPI: type  sharegroup: [(EAGLContext*) contextToShareWith sharegroup]];
+           #if defined (__IPHONE_7_0) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_7_0
+            if (version == openGL3_2 && [[UIDevice currentDevice].systemVersion floatValue] >= 7.0)
+            {
+                if (! createContext (kEAGLRenderingAPIOpenGLES3, contextToShare))
+                {
+                    releaseContext();
+                    createContext (kEAGLRenderingAPIOpenGLES2, contextToShare);
+                }
+            }
             else
-                [context initWithAPI: type];
+           #endif
+            {
+                createContext (kEAGLRenderingAPIOpenGLES2, contextToShare);
+            }
+
+            jassert (context != nil);
 
             // I'd prefer to put this stuff in the initialiseOnRenderThread() call, but doing
             // so causes myserious timing-related failures.
@@ -93,9 +103,7 @@ public:
 
     ~NativeContext()
     {
-        [context release];
-        context = nil;
-
+        releaseContext();
         [view removeFromSuperview];
         [view release];
     }
@@ -111,7 +119,7 @@ public:
 
     bool createdOk() const noexcept             { return getRawContext() != nullptr; }
     void* getRawContext() const noexcept        { return context; }
-    GLuint getFrameBufferID() const noexcept    { return frameBufferHandle; }
+    GLuint getFrameBufferID() const noexcept    { return useMSAA ? msaaBufferHandle : frameBufferHandle; }
 
     bool makeActive() const noexcept
     {
@@ -135,6 +143,25 @@ public:
 
     void swapBuffers()
     {
+        if (useMSAA)
+        {
+            glBindFramebuffer (GL_DRAW_FRAMEBUFFER, frameBufferHandle);
+            glBindFramebuffer (GL_READ_FRAMEBUFFER, msaaBufferHandle);
+
+           #if defined (__IPHONE_7_0) && __IPHONE_OS_VERSION_MAX_ALLOWED >= __IPHONE_7_0
+            if (openGLversion >= openGL3_2)
+            {
+                glBlitFramebuffer (0, 0, lastWidth, lastHeight, 0, 0, lastWidth, lastHeight, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            }
+            else
+           #endif
+            {
+               #ifdef GL_APPLE_framebuffer_multisample
+                glResolveMultisampleFramebufferAPPLE();
+               #endif
+            }
+        }
+
         glBindRenderbuffer (GL_RENDERBUFFER, colorBufferHandle);
         [context presentRenderbuffer: GL_RENDERBUFFER];
 
@@ -174,6 +201,7 @@ private:
     JuceGLView* view;
     CAEAGLLayer* glLayer;
     EAGLContext* context;
+    const OpenGLVersion openGLversion;
     GLuint frameBufferHandle, colorBufferHandle, depthBufferHandle,
            msaaColorHandle, msaaBufferHandle;
 
@@ -181,6 +209,24 @@ private:
     bool volatile needToRebuildBuffers;
     int swapFrames;
     bool useDepthBuffer, useMSAA;
+
+    bool createContext (EAGLRenderingAPI type, void* contextToShare)
+    {
+        jassert (context == nil);
+        context = [EAGLContext alloc];
+
+        context = contextToShare != nullptr
+                    ? [context initWithAPI: type  sharegroup: [(EAGLContext*) contextToShare sharegroup]]
+                    : [context initWithAPI: type];
+
+        return context != nil;
+    }
+
+    void releaseContext()
+    {
+        [context release];
+        context = nil;
+    }
 
     //==============================================================================
     void createGLBuffers()
@@ -208,7 +254,7 @@ private:
             glBindFramebuffer (GL_FRAMEBUFFER, msaaBufferHandle);
             glBindRenderbuffer (GL_RENDERBUFFER, msaaColorHandle);
 
-            glRenderbufferStorageMultisampleAPPLE (GL_RENDERBUFFER, 4, GL_RGBA8_OES, width, height);
+            glRenderbufferStorageMultisample (GL_RENDERBUFFER, 4, GL_RGBA8, width, height);
 
             glFramebufferRenderbuffer (GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, msaaColorHandle);
         }
@@ -219,7 +265,7 @@ private:
             glBindRenderbuffer (GL_RENDERBUFFER, depthBufferHandle);
 
             if (useMSAA)
-                glRenderbufferStorageMultisampleAPPLE (GL_RENDERBUFFER, 4, GL_DEPTH_COMPONENT16, width, height);
+                glRenderbufferStorageMultisample (GL_RENDERBUFFER, 4, GL_DEPTH_COMPONENT16, width, height);
             else
                 glRenderbufferStorage (GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height);
 

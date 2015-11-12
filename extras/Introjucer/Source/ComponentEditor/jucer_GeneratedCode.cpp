@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -24,7 +24,7 @@
 
 #include "../jucer_Headers.h"
 #include "jucer_GeneratedCode.h"
-
+#include "jucer_JucerDocument.h"
 
 //==============================================================================
 GeneratedCode::GeneratedCode (const JucerDocument* const doc)
@@ -161,12 +161,10 @@ String GeneratedCode::getCallbackDefinitions() const
 String GeneratedCode::getClassDeclaration() const
 {
     StringArray parentClassLines;
-    parentClassLines.addTokens (parentClasses, ",", String::empty);
+    parentClassLines.addTokens (parentClasses, ",", StringRef());
     parentClassLines.addArray (getExtraParentClasses());
 
-    parentClassLines.trim();
-    parentClassLines.removeEmptyStrings();
-    parentClassLines.removeDuplicates (false);
+    parentClassLines = getCleanedStringArray (parentClassLines);
 
     if (parentClassLines.contains ("public Button", false))
         parentClassLines.removeString ("public Component", false);
@@ -186,9 +184,7 @@ String GeneratedCode::getInitialiserList() const
     if (parentClassInitialiser.isNotEmpty())
         inits.insert (0, parentClassInitialiser);
 
-    inits.trim();
-    inits.removeEmptyStrings();
-    inits.removeDuplicates (false);
+    inits = getCleanedStringArray (inits);
 
     String s;
 
@@ -217,16 +213,19 @@ String GeneratedCode::getInitialiserList() const
 
 static String getIncludeFileCode (StringArray files)
 {
-    files.trim();
-    files.removeEmptyStrings();
-    files.removeDuplicates (false);
-
     String s;
+
+    files = getCleanedStringArray (files);
 
     for (int i = 0; i < files.size(); ++i)
         s << "#include \"" << files[i] << "\"\n";
 
     return s;
+}
+
+bool GeneratedCode::shouldUseTransMacro() const noexcept
+{
+    return document->shouldUseTransMacro();
 }
 
 //==============================================================================
@@ -297,11 +296,10 @@ static void copyAcrossUserSections (String& dest, const String& src)
 
                     if (getUserSection (srcLines, tag, sourceLines))
                     {
-                        int j;
-                        for (j = endLine - i; --j > 0;)
+                        for (int j = endLine - i; --j > 0;)
                             dstLines.remove (i + 1);
 
-                        for (j = 0; j < sourceLines.size(); ++j)
+                        for (int j = 0; j < sourceLines.size(); ++j)
                             dstLines.insert (++i, sourceLines [j].trimEnd());
 
                         ++i;

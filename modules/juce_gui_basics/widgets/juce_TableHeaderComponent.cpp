@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -440,7 +440,7 @@ String TableHeaderComponent::toString() const
         e->setAttribute ("width", ci->width);
     }
 
-    return doc.createDocument (String::empty, true, false);
+    return doc.createDocument ("", true, false);
 }
 
 void TableHeaderComponent::restoreFromString (const String& storedVersion)
@@ -623,7 +623,7 @@ void TableHeaderComponent::mouseDrag (const MouseEvent& e)
                         minWidthOnRight += columns.getUnchecked (i)->minimumWidth;
 
                 const Rectangle<int> currentPos (getColumnPosition (getIndexOfColumnId (columnIdBeingResized, true)));
-                w = jmax (ci->minimumWidth, jmin (w, getWidth() - minWidthOnRight - currentPos.getX()));
+                w = jmax (ci->minimumWidth, jmin (w, lastDeliberateWidth - minWidthOnRight - currentPos.getX()));
             }
 
             setColumnWidth (columnIdBeingResized, w);

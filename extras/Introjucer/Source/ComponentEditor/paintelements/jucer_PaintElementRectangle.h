@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_PAINTELEMENTRECTANGLE_JUCEHEADER__
-#define __JUCER_PAINTELEMENTRECTANGLE_JUCEHEADER__
+#ifndef JUCER_PAINTELEMENTRECTANGLE_H_INCLUDED
+#define JUCER_PAINTELEMENTRECTANGLE_H_INCLUDED
 
 #include "jucer_ColouredElement.h"
 
@@ -32,8 +32,8 @@
 class PaintElementRectangle     : public ColouredElement
 {
 public:
-    PaintElementRectangle (PaintRoutine* owner)
-        : ColouredElement (owner, "Rectangle", true, false)
+    PaintElementRectangle (PaintRoutine* pr)
+        : ColouredElement (pr, "Rectangle", true, false)
     {
     }
 
@@ -49,8 +49,8 @@ public:
 
     void draw (Graphics& g, const ComponentLayout* layout, const Rectangle<int>& parentArea)
     {
-        Component parentComponent;
-        parentComponent.setBounds (parentArea);
+        Component tempParentComp;
+        tempParentComp.setBounds (parentArea);
 
         fillType.setFillType (g, getDocument(), parentArea);
 
@@ -66,11 +66,11 @@ public:
         }
     }
 
-    void getEditableProperties (Array <PropertyComponent*>& properties)
+    void getEditableProperties (Array <PropertyComponent*>& props)
     {
-        ColouredElement::getEditableProperties (properties);
+        ColouredElement::getEditableProperties (props);
 
-        properties.add (new ShapeToPathProperty (this));
+        props.add (new ShapeToPathProperty (this));
     }
 
     void fillInGeneratedCode (GeneratedCode& code, String& paintMethodCode)
@@ -158,4 +158,4 @@ private:
 };
 
 
-#endif   // __JUCER_PAINTELEMENTRECTANGLE_JUCEHEADER__
+#endif   // JUCER_PAINTELEMENTRECTANGLE_H_INCLUDED

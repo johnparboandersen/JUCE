@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,12 +22,14 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_APPLICATION_JUCEHEADER__
-#define __JUCER_APPLICATION_JUCEHEADER__
+#ifndef JUCER_APPLICATION_H_INCLUDED
+#define JUCER_APPLICATION_H_INCLUDED
 
 #include "../jucer_Headers.h"
 #include "jucer_MainWindow.h"
 #include "jucer_CommandLine.h"
+#include "../Project/jucer_Module.h"
+#include "jucer_AutoUpdater.h"
 #include "../Code Editor/jucer_SourceCodeEditor.h"
 
 void createGUIEditorMenu (PopupMenu&);
@@ -44,8 +46,7 @@ public:
     //==============================================================================
     void initialise (const String& commandLine) override
     {
-        LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
-        settings = new StoredSettings();
+        initialiseBasics();
 
         if (commandLine.isNotEmpty())
         {
@@ -60,8 +61,6 @@ public:
             }
         }
 
-        initialiseLogger ("log_");
-
         if (sendCommandLineToPreexistingInstance())
         {
             DBG ("Another instance is running - quitting...");
@@ -69,42 +68,80 @@ public:
             return;
         }
 
-        icons = new Icons();
+        if (! initialiseLog())
+        {
+            quit();
+            return;
+        }
 
         initCommandManager();
-
         menuModel = new MainMenuModel();
-
-        doExtraInitialisation();
 
         settings->appearance.refreshPresetSchemeList();
 
-        ImageCache::setCacheTimeout (30 * 1000);
+        initialiseWindows (commandLine);
 
-        if (commandLine.trim().isNotEmpty() && ! commandLine.trim().startsWithChar ('-'))
+       #if JUCE_MAC
+        MenuBarModel::setMacMainMenu (menuModel, nullptr, "Open Recent");
+       #endif
+
+        versionChecker = createVersionChecker();
+    }
+
+    void initialiseBasics()
+    {
+        LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
+        settings = new StoredSettings();
+        ImageCache::setCacheTimeout (30 * 1000);
+        icons = new Icons();
+    }
+
+    virtual bool initialiseLog()
+    {
+        return initialiseLogger ("log_");
+    }
+
+    bool initialiseLogger (const char* filePrefix)
+    {
+        if (logger == nullptr)
+        {
+            logger = FileLogger::createDateStampedLogger (getLogFolderName(), filePrefix, ".txt",
+                                                          getApplicationName() + " " + getApplicationVersion()
+                                                            + "  ---  Build date: " __DATE__);
+            Logger::setCurrentLogger (logger);
+        }
+
+        return logger != nullptr;
+    }
+
+    virtual void initialiseWindows (const String& commandLine)
+    {
+        const String commandLineWithoutNSDebug (commandLine.replace ("-NSDocumentRevisionsDebugMode YES", ""));
+
+        if (commandLineWithoutNSDebug.trim().isNotEmpty() && ! commandLineWithoutNSDebug.trim().startsWithChar ('-'))
             anotherInstanceStarted (commandLine);
         else
             mainWindowList.reopenLastProjects();
 
         mainWindowList.createWindowIfNoneAreOpen();
-
-       #if JUCE_MAC
-        MenuBarModel::setMacMainMenu (menuModel, nullptr, "Open Recent");
-       #endif
     }
 
     void shutdown() override
     {
+        versionChecker = nullptr;
         appearanceEditorWindow = nullptr;
+        globalPreferencesWindow = nullptr;
         utf8Window = nullptr;
+        svgPathWindow = nullptr;
+
+        mainWindowList.forceCloseAllWindows();
+        openDocumentManager.clear();
 
        #if JUCE_MAC
         MenuBarModel::setMacMainMenu (nullptr);
        #endif
-        menuModel = nullptr;
 
-        mainWindowList.forceCloseAllWindows();
-        openDocumentManager.clear();
+        menuModel = nullptr;
         commandManager = nullptr;
         settings = nullptr;
 
@@ -119,12 +156,7 @@ public:
     //==============================================================================
     void systemRequestedQuit() override
     {
-        closeModalCompsAndQuit();
-    }
-
-    void closeModalCompsAndQuit()
-    {
-        if (cancelAnyModalComponents())
+        if (ModalComponentManager::getInstance()->cancelAllModalComponents())
         {
             new AsyncQuitRetrier();
         }
@@ -138,6 +170,21 @@ public:
     //==============================================================================
     const String getApplicationName() override       { return "Introjucer"; }
     const String getApplicationVersion() override    { return ProjectInfo::versionString; }
+
+    virtual String getVersionDescription() const
+    {
+        String s;
+
+        const Time buildDate (Time::getCompilationDate());
+
+        s << "Introjucer " << ProjectInfo::versionString
+          << newLine
+          << "Build date: " << buildDate.getDayOfMonth()
+          << " " << Time::getMonthName (buildDate.getMonth(), true)
+          << " " << buildDate.getYear();
+
+        return s;
+    }
 
     bool moreThanOneInstanceAllowed() override
     {
@@ -172,19 +219,19 @@ public:
             setApplicationCommandManagerToWatch (&getCommandManager());
         }
 
-        StringArray getMenuBarNames()
+        StringArray getMenuBarNames() override
         {
             return getApp().getMenuNames();
         }
 
-        PopupMenu getMenuForIndex (int /*topLevelMenuIndex*/, const String& menuName)
+        PopupMenu getMenuForIndex (int /*topLevelMenuIndex*/, const String& menuName) override
         {
             PopupMenu menu;
             getApp().createMenu (menu, menuName);
             return menu;
         }
 
-        void menuItemSelected (int menuItemID, int /*topLevelMenuIndex*/)
+        void menuItemSelected (int menuItemID, int /*topLevelMenuIndex*/) override
         {
             getApp().handleMainMenuCommand (menuItemID);
         }
@@ -228,6 +275,7 @@ public:
         menu.addCommandItem (commandManager, CommandIDs::closeDocument);
         menu.addCommandItem (commandManager, CommandIDs::saveDocument);
         menu.addCommandItem (commandManager, CommandIDs::saveDocumentAs);
+        menu.addCommandItem (commandManager, CommandIDs::saveAll);
         menu.addSeparator();
         menu.addCommandItem (commandManager, CommandIDs::closeProject);
         menu.addCommandItem (commandManager, CommandIDs::saveProject);
@@ -271,8 +319,6 @@ public:
 
     void createColourSchemeItems (PopupMenu& menu)
     {
-        menu.addCommandItem (commandManager, CommandIDs::showAppearanceSettings);
-
         const StringArray presetSchemes (settings->appearance.getPresetSchemes());
 
         if (presetSchemes.size() > 0)
@@ -310,7 +356,10 @@ public:
 
     virtual void createToolsMenu (PopupMenu& menu)
     {
+        menu.addCommandItem (commandManager, CommandIDs::showGlobalPreferences);
+        menu.addSeparator();
         menu.addCommandItem (commandManager, CommandIDs::showUTF8Tool);
+        menu.addCommandItem (commandManager, CommandIDs::showSVGPathTool);
         menu.addCommandItem (commandManager, CommandIDs::showTranslationTool);
     }
 
@@ -347,8 +396,9 @@ public:
                                   CommandIDs::open,
                                   CommandIDs::closeAllDocuments,
                                   CommandIDs::saveAll,
-                                  CommandIDs::showAppearanceSettings,
-                                  CommandIDs::showUTF8Tool };
+                                  CommandIDs::showGlobalPreferences,
+                                  CommandIDs::showUTF8Tool,
+                                  CommandIDs::showSVGPathTool };
 
         commands.addArray (ids, numElementsInArray (ids));
     }
@@ -367,8 +417,8 @@ public:
             result.defaultKeypresses.add (KeyPress ('o', ModifierKeys::commandModifier, 0));
             break;
 
-        case CommandIDs::showAppearanceSettings:
-            result.setInfo ("Fonts and Colours...", "Shows the appearance settings window.", CommandCategories::general, 0);
+        case CommandIDs::showGlobalPreferences:
+            result.setInfo ("Global Preferences...", "Shows the global preferences window.", CommandCategories::general, 0);
             break;
 
         case CommandIDs::closeAllDocuments:
@@ -378,11 +428,15 @@ public:
 
         case CommandIDs::saveAll:
             result.setInfo ("Save All", "Saves all open documents", CommandCategories::general, 0);
-            result.setActive (openDocumentManager.anyFilesNeedSaving());
+            result.defaultKeypresses.add (KeyPress ('s', ModifierKeys::commandModifier | ModifierKeys::altModifier, 0));
             break;
 
         case CommandIDs::showUTF8Tool:
             result.setInfo ("UTF-8 String-Literal Helper", "Shows the UTF-8 string literal utility", CommandCategories::general, 0);
+            break;
+
+        case CommandIDs::showSVGPathTool:
+            result.setInfo ("SVG Path Helper", "Shows the SVG->Path data conversion utility", CommandCategories::general, 0);
             break;
 
         default:
@@ -400,7 +454,9 @@ public:
             case CommandIDs::saveAll:                   openDocumentManager.saveAll(); break;
             case CommandIDs::closeAllDocuments:         closeAllDocuments (true); break;
             case CommandIDs::showUTF8Tool:              showUTF8ToolWindow (utf8Window); break;
-            case CommandIDs::showAppearanceSettings:    AppearanceSettings::showEditorWindow (appearanceEditorWindow); break;
+            case CommandIDs::showSVGPathTool:           showSVGPathDataToolWindow (svgPathWindow); break;
+
+            case CommandIDs::showGlobalPreferences:     AppearanceSettings::showGlobalPreferences (globalPreferencesWindow); break;
             default:                                    return JUCEApplication::perform (info);
         }
 
@@ -441,17 +497,6 @@ public:
     }
 
     //==============================================================================
-    void initialiseLogger (const char* filePrefix)
-    {
-        if (logger == nullptr)
-        {
-            logger = FileLogger::createDateStampedLogger (getLogFolderName(), filePrefix, ".txt",
-                                                          getApplicationName() + " " + getApplicationVersion()
-                                                            + "  ---  Build date: " __DATE__);
-            Logger::setCurrentLogger (logger);
-        }
-    }
-
     struct FileWithTime
     {
         FileWithTime (const File& f) : file (f), time (f.getLastModificationTime()) {}
@@ -490,7 +535,6 @@ public:
         logger = nullptr;
     }
 
-    virtual void doExtraInitialisation() {}
     virtual void addExtraConfigItems (Project&, TreeViewItem&) {}
 
    #if JUCE_LINUX
@@ -520,6 +564,12 @@ public:
     }
 
     //==============================================================================
+    virtual LatestVersionChecker* createVersionChecker() const
+    {
+        return new LatestVersionChecker();
+    }
+
+    //==============================================================================
     IntrojucerLookAndFeel lookAndFeel;
 
     ScopedPointer<StoredSettings> settings;
@@ -531,13 +581,15 @@ public:
     OpenDocumentManager openDocumentManager;
     ScopedPointer<ApplicationCommandManager> commandManager;
 
-    ScopedPointer<Component> appearanceEditorWindow, utf8Window;
+    ScopedPointer<Component> appearanceEditorWindow, globalPreferencesWindow, utf8Window, svgPathWindow;
 
     ScopedPointer<FileLogger> logger;
 
     bool isRunningCommandLine;
 
 private:
+    ScopedPointer<LatestVersionChecker> versionChecker;
+
     class AsyncQuitRetrier  : private Timer
     {
     public:
@@ -548,8 +600,8 @@ private:
             stopTimer();
             delete this;
 
-            if (JUCEApplicationBase::getInstance() != nullptr)
-                getApp().closeModalCompsAndQuit();
+            if (JUCEApplicationBase* app = JUCEApplicationBase::getInstance())
+                app->systemRequestedQuit();
         }
 
         JUCE_DECLARE_NON_COPYABLE (AsyncQuitRetrier)
@@ -571,4 +623,4 @@ private:
 };
 
 
-#endif   // __JUCER_APPLICATION_JUCEHEADER__
+#endif   // JUCER_APPLICATION_H_INCLUDED

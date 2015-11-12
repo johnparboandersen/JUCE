@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,13 +22,18 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_MODULE_JUCEHEADER__
-#define __JUCER_MODULE_JUCEHEADER__
+#ifndef JUCER_MODULE_H_INCLUDED
+#define JUCER_MODULE_H_INCLUDED
 
 #include "../jucer_Headers.h"
 #include "jucer_Project.h"
 class ProjectExporter;
 class ProjectSaver;
+
+//==============================================================================
+File findDefaultModulesFolder (bool mustContainJuceCoreModule = true);
+bool isJuceModulesFolder (const File&);
+bool isJuceFolder (const File&);
 
 //==============================================================================
 struct ModuleDescription
@@ -45,6 +50,7 @@ struct ModuleDescription
     String getDescription() const       { return moduleInfo [Ids::description].toString(); }
     String getLicense() const           { return moduleInfo [Ids::license].toString(); }
     String getHeaderName() const        { return moduleInfo [Ids::include].toString(); }
+    String getPreprocessorDefs() const  { return moduleInfo [Ids::defines].toString(); }
 
     File getFolder() const              { jassert (manifestFile != File::nonexistent); return manifestFile.getParentDirectory(); }
 
@@ -62,6 +68,7 @@ struct ModuleList
 {
     ModuleList();
     ModuleList (const ModuleList&);
+    ModuleList& operator= (const ModuleList&);
 
     const ModuleDescription* getModuleWithID (const String& moduleID) const;
     StringArray getIDs() const;
@@ -93,8 +100,8 @@ public:
     void prepareExporter (ProjectExporter&, ProjectSaver&) const;
     void createPropertyEditors (ProjectExporter&, PropertyListBuilder&) const;
     void getConfigFlags (Project&, OwnedArray<Project::ConfigFlag>& flags) const;
-    void getLocalCompiledFiles (const File& localModuleFolder, Array<File>& files) const;
     void findBrowseableFiles (const File& localModuleFolder, Array<File>& files) const;
+    void findAndAddCompiledUnits (ProjectExporter&, ProjectSaver*, const File& localModuleFolder, Array<File>& result) const;
 
     ModuleDescription moduleInfo;
 
@@ -102,15 +109,14 @@ private:
     mutable Array<File> sourceFiles;
 
     File getModuleHeaderFile (const File& folder) const;
-    static bool fileTargetMatches (ProjectExporter& exporter, const String& target);
 
     void findWildcardMatches (const File& localModuleFolder, const String& wildcardPath, Array<File>& result) const;
-    void findAndAddCompiledCode (ProjectExporter&, ProjectSaver&, const File& localModuleFolder, Array<File>& result) const;
-    void addBrowsableCode (ProjectExporter&, ProjectSaver&, const Array<File>& compiled, const File& localModuleFolder) const;
+    void addBrowseableCode (ProjectExporter&, const Array<File>& compiled, const File& localModuleFolder) const;
     void createLocalHeaderWrapper (ProjectSaver&, const File& originalHeader, const File& localHeader) const;
 
     bool isAUPluginHost (const Project&) const;
     bool isVSTPluginHost (const Project&) const;
+    bool isVST3PluginHost (const Project&) const;
 };
 
 //==============================================================================
@@ -121,8 +127,9 @@ public:
 
     bool isModuleEnabled (const String& moduleID) const;
     Value shouldShowAllModuleFilesInProject (const String& moduleID);
-    Value shouldCopyModuleFilesLocally (const String& moduleID);
-    void removeModule (const String& moduleID);
+    Value shouldNotOverwriteModuleCodeOnSave (const String& moduleID);
+    Value shouldCopyModuleFilesLocally (const String& moduleID) const;
+    void removeModule (String moduleID);
     bool isAudioPluginModuleMissing() const;
 
     ModuleDescription getModuleInfo (const String& moduleID);
@@ -143,6 +150,7 @@ public:
     String getModuleID (int index) const    { return state.getChild (index) [Ids::ID].toString(); }
 
     bool areMostModulesCopiedLocally() const;
+    void setLocalCopyModeForAllModules (bool copyLocally);
     void sortAlphabetically();
 
     static File findDefaultModulesFolder (Project&);
@@ -153,8 +161,10 @@ public:
 private:
     UndoManager* getUndoManager() const     { return project.getUndoManagerFor (state); }
 
+    File findLocalModuleInfoFile (const String& moduleID, bool useExportersForOtherOSes);
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EnabledModuleList)
 };
 
 
-#endif   // __JUCER_MODULE_JUCEHEADER__
+#endif   // JUCER_MODULE_H_INCLUDED

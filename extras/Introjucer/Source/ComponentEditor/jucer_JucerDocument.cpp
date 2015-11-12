@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -24,7 +24,7 @@
 
 #include "../jucer_Headers.h"
 #include "../Application/jucer_Application.h"
-#include "../Project/jucer_NewFileWizard.h"
+#include "../Wizards/jucer_NewFileWizard.h"
 #include "jucer_JucerDocument.h"
 #include "jucer_ObjectTypes.h"
 #include "ui/jucer_JucerDocumentEditor.h"
@@ -54,10 +54,12 @@ JucerDocument::JucerDocument (SourceCodeDocument* c)
 
     IntrojucerApp::getCommandManager().commandStatusChanged();
     cpp->getCodeDocument().addListener (this);
+    IntrojucerApp::getApp().openDocumentManager.addListener (this);
 }
 
 JucerDocument::~JucerDocument()
 {
+    IntrojucerApp::getApp().openDocumentManager.removeListener (this);
     cpp->getCodeDocument().removeListener (this);
     IntrojucerApp::getCommandManager().commandStatusChanged();
 }
@@ -77,6 +79,11 @@ struct UserDocChangeTimer  : public Timer
 
     JucerDocument& doc;
 };
+
+bool JucerDocument::documentAboutToClose (OpenDocumentManager::Document* doc)
+{
+    return doc != cpp;
+}
 
 void JucerDocument::userEditedCpp()
 {
@@ -151,11 +158,7 @@ void JucerDocument::setParentClasses (const String& classes)
 {
     if (classes != parentClasses)
     {
-        StringArray parentClassLines;
-        parentClassLines.addTokens (classes, ",", String::empty);
-        parentClassLines.trim();
-        parentClassLines.removeEmptyStrings();
-        parentClassLines.removeDuplicates (false);
+        StringArray parentClassLines (getCleanedStringArray (StringArray::fromTokens (classes, ",", StringRef())));
 
         for (int i = parentClassLines.size(); --i >= 0;)
         {
@@ -394,12 +397,8 @@ bool JucerDocument::loadFromXml (const XmlElement& xml)
         activeExtraMethods.clear();
 
         if (XmlElement* const methods = xml.getChildByName ("METHODS"))
-        {
             forEachXmlChildElementWithTagName (*methods, e, "METHOD")
-            {
                 activeExtraMethods.addIfNotAlreadyThere (e->getStringAttribute ("name"));
-            }
-        }
 
         activeExtraMethods.trim();
         activeExtraMethods.removeEmptyStrings();
@@ -423,13 +422,14 @@ void JucerDocument::fillInGeneratedCode (GeneratedCode& code) const
     code.initialisers.addLines (variableInitialisers);
 
     if (! componentName.isEmpty())
-        code.parentClassInitialiser = "Component (" + quotedString (code.componentName) + ")";
+        code.constructorCode << "setName (" + quotedString (componentName, false) + ");\n";
 
     // call these now, just to make sure they're the first two methods in the list.
     code.getCallbackCode (String::empty, "void", "paint (Graphics& g)", false)
         << "//[UserPrePaint] Add your own custom painting code here..\n//[/UserPrePaint]\n\n";
 
-    code.getCallbackCode (String::empty, "void", "resized()", false);
+    code.getCallbackCode (String::empty, "void", "resized()", false)
+        << "//[UserPreResize] Add your own custom resize code here..\n//[/UserPreResize]\n\n";
 
     if (ComponentLayout* l = getComponentLayout())
         l->fillInGeneratedCode (code);
@@ -438,7 +438,7 @@ void JucerDocument::fillInGeneratedCode (GeneratedCode& code) const
 
     ScopedPointer<XmlElement> e (createXml());
     jassert (e != nullptr);
-    code.jucerMetadata = e->createDocument (String::empty, false, false);
+    code.jucerMetadata = e->createDocument ("", false, false);
 
     resources.fillInGeneratedCode (code);
 
@@ -447,8 +447,7 @@ void JucerDocument::fillInGeneratedCode (GeneratedCode& code) const
            "//[/UserPreSize]\n";
 
     if (initialWidth > 0 || initialHeight > 0)
-        code.constructorCode
-            << "\nsetSize (" << initialWidth << ", " << initialHeight << ");\n";
+        code.constructorCode << "\nsetSize (" << initialWidth << ", " << initialHeight << ");\n";
 
     code.getCallbackCode (String::empty, "void", "paint (Graphics& g)", false)
         << "//[UserPaint] Add your own custom painting code here..\n//[/UserPaint]";
@@ -464,24 +463,25 @@ void JucerDocument::fillInGeneratedCode (GeneratedCode& code) const
     {
         if (isOptionalMethodEnabled (methods[i]))
         {
-            String& s = code.getCallbackCode (baseClasses[i], returnValues[i], methods[i], false);
+            String baseClassToAdd (baseClasses[i]);
+
+            if (baseClassToAdd == "Component" || baseClassToAdd == "Button")
+                baseClassToAdd.clear();
+
+            String& s = code.getCallbackCode (baseClassToAdd, returnValues[i], methods[i], false);
 
             if (! s.contains ("//["))
             {
                 String userCommentTag ("UserCode_");
                 userCommentTag += methods[i].upToFirstOccurrenceOf ("(", false, false).trim();
 
-                s << "\n//["
-                  << userCommentTag
-                  << "] -- Add your code here...\n"
+                s << "\n//[" << userCommentTag << "] -- Add your code here...\n"
                   << initialContents[i];
 
                 if (initialContents[i].isNotEmpty() && ! initialContents[i].endsWithChar ('\n'))
                     s << '\n';
 
-                s << "//[/"
-                  << userCommentTag
-                  << "]\n";
+                s << "//[/" << userCommentTag << "]\n";
             }
         }
     }
@@ -591,11 +591,10 @@ bool JucerDocument::reloadFromDocument()
 
     currentXML = newXML;
     stopTimer();
-    if (! loadFromXml (*currentXML))
-        return false;
 
     resources.loadFromCpp (getCppFile(), cppContent);
-    return true;
+
+    return loadFromXml (*currentXML);
 }
 
 XmlElement* JucerDocument::pullMetaDataFromCppFile (const String& cpp)
@@ -657,8 +656,8 @@ JucerDocument* JucerDocument::createForCppFile (Project* p, const File& file)
 {
     OpenDocumentManager& odm = IntrojucerApp::getApp().openDocumentManager;
 
-    if (SourceCodeDocument* cpp = dynamic_cast <SourceCodeDocument*> (odm.openFile (p, file)))
-        if (dynamic_cast <SourceCodeDocument*> (odm.openFile (p, file.withFileExtension (".h"))) != nullptr)
+    if (SourceCodeDocument* cpp = dynamic_cast<SourceCodeDocument*> (odm.openFile (p, file)))
+        if (dynamic_cast<SourceCodeDocument*> (odm.openFile (p, file.withFileExtension (".h"))) != nullptr)
             return createDocument (cpp);
 
     return nullptr;
@@ -698,9 +697,8 @@ public:
         return SourceCodeDocument::createEditor();
     }
 
-    class Type  : public OpenDocumentManager::DocumentType
+    struct Type  : public OpenDocumentManager::DocumentType
     {
-    public:
         Type() {}
 
         bool canOpenFile (const File& f) override                { return JucerDocument::isValidJucerCppFile (f); }
@@ -719,9 +717,9 @@ class JucerFileWizard  : public NewFileWizard::Type
 public:
     JucerFileWizard() {}
 
-    String getName()  { return "GUI Component"; }
+    String getName() override  { return "GUI Component"; }
 
-    void createNewFile (Project::Item parent)
+    void createNewFile (Project::Item parent) override
     {
         const File newFile (askUserToChooseNewFile (String (defaultClassName) + ".h", "*.h;*.cpp", parent));
 
@@ -743,6 +741,8 @@ public:
 
                     if (jucerDoc != nullptr)
                     {
+                        jucerDoc->setClassName (newFile.getFileNameWithoutExtension());
+
                         jucerDoc->flushChangesToDocuments();
                         jucerDoc = nullptr;
 
@@ -751,8 +751,8 @@ public:
                         odm.closeDocument (cpp, true);
                         odm.closeDocument (header, true);
 
-                        parent.addFile (headerFile, 0, true);
-                        parent.addFile (cppFile, 0, true);
+                        parent.addFileRetainingSortOrder (headerFile, true);
+                        parent.addFileRetainingSortOrder (cppFile, true);
                     }
                 }
             }

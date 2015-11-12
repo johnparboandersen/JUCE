@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -21,6 +21,15 @@
 
   ==============================================================================
 */
+
+static int getAllowedTextureSize (int x)
+{
+   #if JUCE_OPENGL_ALLOW_NON_POWER_OF_TWO_TEXTURES
+    return x;
+   #else
+    return nextPowerOfTwo (x);
+   #endif
+}
 
 OpenGLTexture::OpenGLTexture()
     : textureID (0), width (0), height (0), ownerContext (nullptr)
@@ -65,8 +74,8 @@ void OpenGLTexture::create (const int w, const int h, const void* pixels, GLenum
     glPixelStorei (GL_UNPACK_ALIGNMENT, 1);
     JUCE_CHECK_OPENGL_ERROR
 
-    width  = nextPowerOfTwo (w);
-    height = nextPowerOfTwo (h);
+    width  = getAllowedTextureSize (w);
+    height = getAllowedTextureSize (h);
 
     const GLint internalformat = type == GL_ALPHA ? GL_ALPHA : GL_RGBA;
 
@@ -147,14 +156,21 @@ void OpenGLTexture::loadARGBFlipped (const PixelARGB* pixels, int w, int h)
 
 void OpenGLTexture::release()
 {
-    if (textureID != 0
-         && ownerContext == OpenGLContext::getCurrentContext())
+    if (textureID != 0)
     {
-        glDeleteTextures (1, &textureID);
+        // If the texture is deleted while the owner context is not active, it's
+        // impossible to delete it, so this will be a leak until the context itself
+        // is deleted.
+        jassert (ownerContext == OpenGLContext::getCurrentContext());
 
-        textureID = 0;
-        width = 0;
-        height = 0;
+        if (ownerContext == OpenGLContext::getCurrentContext())
+        {
+            glDeleteTextures (1, &textureID);
+
+            textureID = 0;
+            width = 0;
+            height = 0;
+        }
     }
 }
 
@@ -167,27 +183,3 @@ void OpenGLTexture::unbind() const
 {
     glBindTexture (GL_TEXTURE_2D, 0);
 }
-
-#if JUCE_USE_OPENGL_FIXED_FUNCTION
-void OpenGLTexture::draw2D (float x1, float y1,
-                            float x2, float y2,
-                            float x3, float y3,
-                            float x4, float y4,
-                            Colour colour) const
-{
-    bind();
-    OpenGLHelpers::drawQuad2D (x1, y1, x2, y2, x3, y3, x4, y4, colour);
-    unbind();
-}
-
-void OpenGLTexture::draw3D (float x1, float y1, float z1,
-                            float x2, float y2, float z2,
-                            float x3, float y3, float z3,
-                            float x4, float y4, float z4,
-                            Colour colour) const
-{
-    bind();
-    OpenGLHelpers::drawQuad3D (x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4, colour);
-    unbind();
-}
-#endif

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -69,14 +69,14 @@ namespace FileHelpers
 
     bool overwriteFileWithNewDataIfDifferent (const File& file, const void* data, size_t numBytes)
     {
-        if (file.getSize() == numBytes
+        if (file.getSize() == (int64) numBytes
               && calculateMemoryHashCode (data, numBytes) == calculateFileHashCode (file))
             return true;
 
         if (file.exists())
             return file.replaceWithData (data, numBytes);
 
-        return file.appendData (data, numBytes);
+        return file.getParentDirectory().createDirectory() && file.appendData (data, numBytes);
     }
 
     bool overwriteFileWithNewDataIfDifferent (const File& file, const MemoryOutputStream& newData)
@@ -178,9 +178,9 @@ namespace FileHelpers
             StringArray toks;
 
            #if JUCE_WINDOWS
-            toks.addTokens (p, "\\/", String::empty);
+            toks.addTokens (p, "\\/", StringRef());
            #else
-            toks.addTokens (p, "/", String::empty);
+            toks.addTokens (p, "/", StringRef());
            #endif
 
             while (toks[0] == ".")

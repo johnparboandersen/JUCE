@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_APPEARANCESETTINGS_JUCEHEADER__
-#define __JUCER_APPEARANCESETTINGS_JUCEHEADER__
+#ifndef JUCER_APPEARANCESETTINGS_H_INCLUDED
+#define JUCER_APPEARANCESETTINGS_H_INCLUDED
 
 
 class AppearanceSettings    : private ValueTree::Listener
@@ -54,7 +54,7 @@ public:
 
     static Font getDefaultCodeFont();
 
-    static void showEditorWindow (ScopedPointer<Component>& ownerPointer);
+    static void showGlobalPreferences (ScopedPointer<Component>& ownerPointer);
 
     static const char* getSchemeFileSuffix()      { return ".scheme"; }
     static const char* getSchemeFileWildCard()    { return "*.scheme"; }
@@ -69,8 +69,8 @@ private:
 
     void valueTreePropertyChanged (ValueTree&, const Identifier&) override   { updateColourScheme(); }
     void valueTreeChildAdded (ValueTree&, ValueTree&) override               { updateColourScheme(); }
-    void valueTreeChildRemoved (ValueTree&, ValueTree&) override             { updateColourScheme(); }
-    void valueTreeChildOrderChanged (ValueTree&) override                    { updateColourScheme(); }
+    void valueTreeChildRemoved (ValueTree&, ValueTree&, int) override        { updateColourScheme(); }
+    void valueTreeChildOrderChanged (ValueTree&, int, int) override          { updateColourScheme(); }
     void valueTreeParentChanged (ValueTree&) override                        { updateColourScheme(); }
     void valueTreeRedirected (ValueTree&) override                           { updateColourScheme(); }
 
@@ -78,7 +78,7 @@ private:
 };
 
 //==============================================================================
-class IntrojucerLookAndFeel   : public LookAndFeel
+class IntrojucerLookAndFeel   : public LookAndFeel_V3
 {
 public:
     IntrojucerLookAndFeel();
@@ -86,32 +86,11 @@ public:
     void fillWithBackgroundTexture (Graphics&);
     static void fillWithBackgroundTexture (Component&, Graphics&);
 
-    int getTabButtonOverlap (int tabDepth) override;
-    int getTabButtonSpaceAroundImage() override;
-    int getTabButtonBestWidth (TabBarButton&, int tabDepth) override;
-    static Colour getTabBackgroundColour (TabBarButton&);
     void drawTabButton (TabBarButton& button, Graphics&, bool isMouseOver, bool isMouseDown) override;
-
-    Rectangle<int> getTabButtonExtraComponentBounds (const TabBarButton&, Rectangle<int>& textArea, Component&) override;
     void drawTabAreaBehindFrontButton (TabbedButtonBar&, Graphics&, int, int) override {}
-
-    void drawStretchableLayoutResizerBar (Graphics&, int w, int h, bool isVerticalBar, bool isMouseOver, bool isMouseDragging) override;
-    Rectangle<int> getPropertyComponentContentPosition (PropertyComponent&) override;
-
-    bool areScrollbarButtonsVisible() override   { return false; }
-
-    void drawScrollbar (Graphics&, ScrollBar&, int x, int y, int width, int height, bool isScrollbarVertical,
-                        int thumbStartPosition, int thumbSize, bool isMouseOver, bool isMouseDown) override;
-
-    void drawConcertinaPanelHeader (Graphics&, const Rectangle<int>& area, bool isMouseOver, bool isMouseDown,
-                                    ConcertinaPanel&, Component&) override;
-
-    void drawButtonBackground (Graphics&, Button&, const Colour& backgroundColour,
-                               bool isMouseOverButton, bool isButtonDown) override;
-
-    void drawTableHeaderBackground (Graphics&, TableHeaderComponent&) override;
-
-    static Colour getScrollbarColourForBackground (Colour background);
+    int getTabButtonBestWidth (TabBarButton&, int tabDepth) override;
+    void drawConcertinaPanelHeader (Graphics&, const juce::Rectangle<int>&, bool, bool, ConcertinaPanel&, Component&) override;
+    static Colour getTabBackgroundColour (TabBarButton&);
 
 private:
     Image backgroundTexture;
@@ -119,4 +98,4 @@ private:
 };
 
 
-#endif   // __JUCER_APPEARANCESETTINGS_JUCEHEADER__
+#endif   // JUCER_APPEARANCESETTINGS_H_INCLUDED

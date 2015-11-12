@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_RELATIVEPATH_JUCEHEADER__
-#define __JUCER_RELATIVEPATH_JUCEHEADER__
+#ifndef JUCER_RELATIVEPATH_H_INCLUDED
+#define JUCER_RELATIVEPATH_H_INCLUDED
 
 
 //==============================================================================
@@ -65,7 +65,7 @@ public:
     String getFileNameWithoutExtension() const              { return getFakeFile().getFileNameWithoutExtension(); }
 
     String getFileExtension() const                         { return getFakeFile().getFileExtension(); }
-    bool hasFileExtension (const String& extension) const   { return getFakeFile().hasFileExtension (extension); }
+    bool hasFileExtension (juce::StringRef extension) const { return getFakeFile().hasFileExtension (extension); }
     bool isAbsolute() const                                 { return FileHelpers::isAbsolutePath (path); }
 
     RelativePath withFileExtension (const String& extension) const
@@ -116,4 +116,4 @@ private:
 };
 
 
-#endif   // __JUCER_RELATIVEPATH_JUCEHEADER__
+#endif   // JUCER_RELATIVEPATH_H_INCLUDED

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the juce_core module of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission to use, copy, modify, and/or distribute this software for any purpose with
    or without fee is hereby granted, provided that the above copyright notice and this
@@ -81,6 +81,11 @@ int Random::nextInt (const int maxValue) noexcept
     return (int) ((((unsigned int) nextInt()) * (uint64) maxValue) >> 32);
 }
 
+int Random::nextInt (Range<int> range) noexcept
+{
+    return range.getStart() + nextInt (range.getLength());
+}
+
 int64 Random::nextInt64() noexcept
 {
     return (((int64) nextInt()) << 32) | (int64) (uint64) (uint32) nextInt();
@@ -157,7 +162,7 @@ class RandomTests  : public UnitTest
 public:
     RandomTests() : UnitTest ("Random") {}
 
-    void runTest()
+    void runTest() override
     {
         beginTest ("Random");
 

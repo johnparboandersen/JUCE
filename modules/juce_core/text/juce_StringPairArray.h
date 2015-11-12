@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the juce_core module of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission to use, copy, modify, and/or distribute this software for any purpose with
    or without fee is hereby granted, provided that the above copyright notice and this
@@ -85,6 +85,8 @@ public:
     */
     String getValue (StringRef, const String& defaultReturnValue) const;
 
+    /** Returns true if the given key exists. */
+    bool containsKey (StringRef key) const noexcept;
 
     /** Returns a list of all keys in the array. */
     const StringArray& getAllKeys() const noexcept          { return keys; }

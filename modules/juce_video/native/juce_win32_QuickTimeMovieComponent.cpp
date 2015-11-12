@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -419,8 +419,8 @@ bool juce_OpenQuickTimeMovieFromStream (InputStream* input, Movie& movie, Handle
         // different types to get QT to try. (We should really be a bit smarter here by
         // working out in advance which one the stream contains, rather than just trying
         // each one)
-        const char* const suffixesToTry[] = { "\04.mov", "\04.mp3",
-                                              "\04.avi", "\04.m4a" };
+        static const char* const suffixesToTry[] = { "\04.mov", "\04.mp3",
+                                                     "\04.avi", "\04.m4a" };
 
         for (int i = 0; i < numElementsInArray (suffixesToTry) && ! ok; ++i)
         {

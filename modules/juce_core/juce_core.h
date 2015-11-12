@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the juce_core module of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission to use, copy, modify, and/or distribute this software for any purpose with
    or without fee is hereby granted, provided that the above copyright notice and this
@@ -48,6 +48,15 @@
  #endif
 #endif
 
+#ifdef _MSC_VER
+ #pragma warning (push)
+ // Disable warnings for long class names, padding, and undefined preprocessor definitions.
+ #pragma warning (disable: 4251 4786 4668 4820)
+ #ifdef __INTEL_COMPILER
+  #pragma warning (disable: 1125)
+ #endif
+#endif
+
 //==============================================================================
 #include "system/juce_TargetPlatform.h"
 
@@ -64,7 +73,7 @@
 //=============================================================================
 /** Config: JUCE_LOG_ASSERTIONS
 
-    If this flag is enabled, the the jassert and jassertfalse macros will always use Logger::writeToLog()
+    If this flag is enabled, the jassert and jassertfalse macros will always use Logger::writeToLog()
     to write a message when an assertion happens.
 
     Enabling it will also leave this turned on in release builds. When it's disabled,
@@ -117,6 +126,17 @@
  #define JUCE_ZLIB_INCLUDE_PATH <zlib.h>
 #endif
 
+/** Config: JUCE_USE_CURL
+    Enables http/https support via libcurl (Linux only). Enabling this will add an additional
+    run-time dynmic dependency to libcurl.
+
+    If you disable this then https/ssl support will not be available on linux.
+*/
+#ifndef JUCE_USE_CURL
+ #define JUCE_USE_CURL 0
+#endif
+
+
 /*  Config: JUCE_CATCH_UNHANDLED_EXCEPTIONS
     If enabled, this will add some exception-catching code to forward unhandled exceptions
     to your JUCEApplicationBase::unhandledException() callback.
@@ -131,14 +151,6 @@
 
 //=============================================================================
 //=============================================================================
-#if JUCE_MSVC
- #pragma warning (disable: 4251) // (DLL build warning, must be disabled before pushing the warning state)
- #pragma warning (push)
- #pragma warning (disable: 4786) // (long class name warning)
- #ifdef __INTEL_COMPILER
-  #pragma warning (disable: 1125)
- #endif
-#endif
 
 #include "system/juce_StandardHeader.h"
 
@@ -194,6 +206,7 @@ extern JUCE_API void JUCE_CALLTYPE logAssertion (const char* file, int line) noe
 #include "threads/juce_ScopedLock.h"
 #include "threads/juce_CriticalSection.h"
 #include "maths/juce_Range.h"
+#include "maths/juce_NormalisableRange.h"
 #include "containers/juce_ElementComparator.h"
 #include "containers/juce_ArrayAllocationBase.h"
 #include "containers/juce_Array.h"
@@ -211,6 +224,7 @@ extern JUCE_API void JUCE_CALLTYPE logAssertion (const char* file, int line) noe
 #include "text/juce_StringPairArray.h"
 #include "text/juce_TextDiff.h"
 #include "text/juce_LocalisedStrings.h"
+#include "text/juce_Base64.h"
 #include "misc/juce_Result.h"
 #include "containers/juce_Variant.h"
 #include "containers/juce_NamedValueSet.h"
@@ -232,15 +246,17 @@ extern JUCE_API void JUCE_CALLTYPE logAssertion (const char* file, int line) noe
 #include "files/juce_FileSearchPath.h"
 #include "files/juce_MemoryMappedFile.h"
 #include "files/juce_TemporaryFile.h"
+#include "files/juce_FileFilter.h"
+#include "files/juce_WildcardFileFilter.h"
 #include "streams/juce_FileInputSource.h"
 #include "logging/juce_FileLogger.h"
-#include "json/juce_JSON.h"
+#include "javascript/juce_JSON.h"
+#include "javascript/juce_Javascript.h"
 #include "maths/juce_BigInteger.h"
 #include "maths/juce_Expression.h"
 #include "maths/juce_Random.h"
 #include "misc/juce_Uuid.h"
 #include "misc/juce_WindowsRegistry.h"
-#include "system/juce_PlatformDefs.h"
 #include "system/juce_SystemStats.h"
 #include "threads/juce_ChildProcess.h"
 #include "threads/juce_DynamicLibrary.h"
@@ -269,6 +285,27 @@ extern JUCE_API void JUCE_CALLTYPE logAssertion (const char* file, int line) noe
 #include "zip/juce_GZIPDecompressorInputStream.h"
 #include "zip/juce_ZipFile.h"
 #include "containers/juce_PropertySet.h"
+#include "memory/juce_SharedResourcePointer.h"
+
+#ifndef DOXYGEN
+ /*
+    As the very long class names here try to explain, the purpose of this code is to cause
+    a linker error if not all of your compile units are consistent in the options that they
+    enable before including JUCE headers. The reason this is important is that if you have
+    two cpp files, and one includes the juce headers with debug enabled, and another does so
+    without that, then each will be generating code with different class layouts, and you'll
+    get subtle and hard-to-track-down memory corruption!
+ */
+ #if JUCE_DEBUG
+  struct JUCE_API this_will_fail_to_link_if_some_of_your_compile_units_are_built_in_debug_mode
+  { this_will_fail_to_link_if_some_of_your_compile_units_are_built_in_debug_mode() noexcept; };
+  static this_will_fail_to_link_if_some_of_your_compile_units_are_built_in_debug_mode compileUnitMismatchSentinel;
+ #else
+  struct JUCE_API this_will_fail_to_link_if_some_of_your_compile_units_are_built_in_release_mode
+  { this_will_fail_to_link_if_some_of_your_compile_units_are_built_in_release_mode() noexcept; };
+  static this_will_fail_to_link_if_some_of_your_compile_units_are_built_in_release_mode compileUnitMismatchSentinel;
+ #endif
+#endif
 
 }
 

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,35 +22,36 @@
   ==============================================================================
 */
 
-ResizableWindow::ResizableWindow (const String& name,
-                                  const bool addToDesktop_)
-    : TopLevelWindow (name, addToDesktop_),
+ResizableWindow::ResizableWindow (const String& name, bool shouldAddToDesktop)
+    : TopLevelWindow (name, shouldAddToDesktop),
       ownsContentComponent (false),
       resizeToFitContent (false),
       fullscreen (false),
+      canDrag (true),
+      dragStarted (false),
       constrainer (nullptr)
      #if JUCE_DEBUG
       , hasBeenResized (false)
      #endif
 {
-    initialise (addToDesktop_);
+    initialise (shouldAddToDesktop);
 }
 
-ResizableWindow::ResizableWindow (const String& name,
-                                  Colour backgroundColour_,
-                                  const bool addToDesktop_)
-    : TopLevelWindow (name, addToDesktop_),
+ResizableWindow::ResizableWindow (const String& name, Colour bkgnd, bool shouldAddToDesktop)
+    : TopLevelWindow (name, shouldAddToDesktop),
       ownsContentComponent (false),
       resizeToFitContent (false),
       fullscreen (false),
+      canDrag (true),
+      dragStarted (false),
       constrainer (nullptr)
      #if JUCE_DEBUG
       , hasBeenResized (false)
      #endif
 {
-    setBackgroundColour (backgroundColour_);
+    setBackgroundColour (bkgnd);
 
-    initialise (addToDesktop_);
+    initialise (shouldAddToDesktop);
 }
 
 ResizableWindow::~ResizableWindow()
@@ -167,7 +168,10 @@ void ResizableWindow::setContentComponentSize (int width, int height)
 
 BorderSize<int> ResizableWindow::getBorderThickness()
 {
-    return BorderSize<int> (isUsingNativeTitleBar() ? 0 : ((resizableBorder != nullptr && ! isFullScreen()) ? 5 : 3));
+    if (isUsingNativeTitleBar() || isKioskMode())
+        return BorderSize<int>();
+
+    return BorderSize<int> ((resizableBorder != nullptr && ! isFullScreen()) ? 4 : 1);
 }
 
 BorderSize<int> ResizableWindow::getContentComponentBorder()
@@ -177,27 +181,23 @@ BorderSize<int> ResizableWindow::getContentComponentBorder()
 
 void ResizableWindow::moved()
 {
-    updateLastPos();
+    updateLastPosIfShowing();
 }
 
 void ResizableWindow::visibilityChanged()
 {
     TopLevelWindow::visibilityChanged();
 
-    updateLastPos();
+    updateLastPosIfShowing();
 }
 
 void ResizableWindow::resized()
 {
+    const bool resizerHidden = isFullScreen() || isKioskMode() || isUsingNativeTitleBar();
+
     if (resizableBorder != nullptr)
     {
-       #if JUCE_WINDOWS || JUCE_LINUX
-        // hide the resizable border if the OS already provides one..
-        resizableBorder->setVisible (! (isFullScreen() || isUsingNativeTitleBar()));
-       #else
-        resizableBorder->setVisible (! isFullScreen());
-       #endif
-
+        resizableBorder->setVisible (! resizerHidden);
         resizableBorder->setBorderThickness (getBorderThickness());
         resizableBorder->setSize (getWidth(), getHeight());
         resizableBorder->toBack();
@@ -205,12 +205,7 @@ void ResizableWindow::resized()
 
     if (resizableCorner != nullptr)
     {
-       #if JUCE_MAC
-        // hide the resizable border if the OS already provides one..
-        resizableCorner->setVisible (! (isFullScreen() || isUsingNativeTitleBar()));
-       #else
-        resizableCorner->setVisible (! isFullScreen());
-       #endif
+        resizableCorner->setVisible (! resizerHidden);
 
         const int resizerSize = 18;
         resizableCorner->setBounds (getWidth() - resizerSize,
@@ -227,7 +222,7 @@ void ResizableWindow::resized()
         contentComponent->setBoundsInset (getContentComponentBorder());
     }
 
-    updateLastPos();
+    updateLastPosIfShowing();
 
    #if JUCE_DEBUG
     hasBeenResized = true;
@@ -320,6 +315,11 @@ void ResizableWindow::setResizeLimits (const int newMinimumWidth,
                                       newMaximumWidth, newMaximumHeight);
 
     setBoundsConstrained (getBounds());
+}
+
+void ResizableWindow::setDraggable (bool shouldBeDraggable) noexcept
+{
+    canDrag = shouldBeDraggable;
 }
 
 void ResizableWindow::setConstrainer (ComponentBoundsConstrainer* newConstrainer)
@@ -424,7 +424,7 @@ void ResizableWindow::setFullScreen (const bool shouldBeFullScreen)
 {
     if (shouldBeFullScreen != isFullScreen())
     {
-        updateLastPos();
+        updateLastPosIfShowing();
         fullscreen = shouldBeFullScreen;
 
         if (isOnDesktop())
@@ -470,7 +470,7 @@ void ResizableWindow::setMinimised (const bool shouldMinimise)
     {
         if (ComponentPeer* const peer = getPeer())
         {
-            updateLastPos();
+            updateLastPosIfShowing();
             peer->setMinimised (shouldMinimise);
         }
         else
@@ -480,9 +480,24 @@ void ResizableWindow::setMinimised (const bool shouldMinimise)
     }
 }
 
-void ResizableWindow::updateLastPos()
+bool ResizableWindow::isKioskMode() const
 {
-    if (isShowing() && ! (isFullScreen() || isMinimised()))
+    if (isOnDesktop())
+        if (ComponentPeer* peer = getPeer())
+            return peer->isKioskMode();
+
+    return Desktop::getInstance().getKioskModeComponent() == this;
+}
+
+void ResizableWindow::updateLastPosIfShowing()
+{
+    if (isShowing())
+        updateLastPosIfNotFullScreen();
+}
+
+void ResizableWindow::updateLastPosIfNotFullScreen()
+{
+    if (! (isFullScreen() || isMinimised() || isKioskMode()))
         lastNonFullScreenPos = getBounds();
 }
 
@@ -495,8 +510,8 @@ void ResizableWindow::parentSizeChanged()
 //==============================================================================
 String ResizableWindow::getWindowStateAsString()
 {
-    updateLastPos();
-    return (isFullScreen() ? "fs " : "") + lastNonFullScreenPos.toString();
+    updateLastPosIfShowing();
+    return (isFullScreen() && ! isKioskMode() ? "fs " : "") + lastNonFullScreenPos.toString();
 }
 
 bool ResizableWindow::restoreWindowStateFromString (const String& s)
@@ -548,7 +563,11 @@ bool ResizableWindow::restoreWindowStateFromString (const String& s)
         peer->setNonFullScreenBounds (newPos);
     }
 
-    lastNonFullScreenPos = newPos;
+    updateLastPosIfNotFullScreen();
+
+    if (fs)
+        setBoundsConstrained (newPos);
+
     setFullScreen (fs);
 
     if (! fs)
@@ -560,14 +579,22 @@ bool ResizableWindow::restoreWindowStateFromString (const String& s)
 //==============================================================================
 void ResizableWindow::mouseDown (const MouseEvent& e)
 {
-    if (! isFullScreen())
+    if (canDrag && ! isFullScreen())
+    {
+        dragStarted = true;
         dragger.startDraggingComponent (this, e);
+    }
 }
 
 void ResizableWindow::mouseDrag (const MouseEvent& e)
 {
-    if (! isFullScreen())
+    if (dragStarted)
         dragger.dragComponent (this, e, constrainer);
+}
+
+void ResizableWindow::mouseUp (const MouseEvent&)
+{
+    dragStarted = false;
 }
 
 //==============================================================================

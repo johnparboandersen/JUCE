@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -37,6 +37,14 @@
 
 #ifndef WM_APPCOMMAND
  #define WM_APPCOMMAND                     0x0319
+#endif
+
+#ifndef MI_WP_SIGNATURE
+ #define MI_WP_SIGNATURE 0xFF515700
+#endif
+
+#ifndef SIGNATURE_MASK
+ #define SIGNATURE_MASK 0xFFFFFF00
 #endif
 
 extern void juce_repeatLastProcessPriority();
@@ -102,17 +110,38 @@ bool Desktop::canUseSemiTransparentWindows() noexcept
 
 #endif
 
+#ifndef MONITOR_DPI_TYPE
+  enum Monitor_DPI_Type
+  {
+    MDT_Effective_DPI  = 0,
+    MDT_Angular_DPI    = 1,
+    MDT_Raw_DPI        = 2,
+    MDT_Default        = MDT_Effective_DPI
+  };
+
+  enum Process_DPI_Awareness
+  {
+    Process_DPI_Unaware            = 0,
+    Process_System_DPI_Aware       = 1,
+    Process_Per_Monitor_DPI_Aware  = 2
+  };
+#endif
+
 typedef BOOL (WINAPI* RegisterTouchWindowFunc) (HWND, ULONG);
 typedef BOOL (WINAPI* GetTouchInputInfoFunc) (HTOUCHINPUT, UINT, TOUCHINPUT*, int);
 typedef BOOL (WINAPI* CloseTouchInputHandleFunc) (HTOUCHINPUT);
 typedef BOOL (WINAPI* GetGestureInfoFunc) (HGESTUREINFO, GESTUREINFO*);
 typedef BOOL (WINAPI* SetProcessDPIAwareFunc)();
+typedef BOOL (WINAPI* SetProcessDPIAwarenessFunc) (Process_DPI_Awareness);
+typedef HRESULT (WINAPI* GetDPIForMonitorFunc) (HMONITOR, Monitor_DPI_Type, UINT*, UINT*);
 
-static RegisterTouchWindowFunc   registerTouchWindow = nullptr;
-static GetTouchInputInfoFunc     getTouchInputInfo = nullptr;
-static CloseTouchInputHandleFunc closeTouchInputHandle = nullptr;
-static GetGestureInfoFunc        getGestureInfo = nullptr;
-static SetProcessDPIAwareFunc    setProcessDPIAware = nullptr;
+static RegisterTouchWindowFunc    registerTouchWindow = nullptr;
+static GetTouchInputInfoFunc      getTouchInputInfo = nullptr;
+static CloseTouchInputHandleFunc  closeTouchInputHandle = nullptr;
+static GetGestureInfoFunc         getGestureInfo = nullptr;
+static SetProcessDPIAwareFunc     setProcessDPIAware = nullptr;
+static SetProcessDPIAwarenessFunc setProcessDPIAwareness = nullptr;
+static GetDPIForMonitorFunc       getDPIForMonitor = nullptr;
 
 static bool hasCheckedForMultiTouch = false;
 
@@ -156,19 +185,37 @@ static void setWindowZOrder (HWND hwnd, HWND insertAfter)
 //==============================================================================
 static void setDPIAwareness()
 {
+   #if ! JUCE_DISABLE_WIN32_DPI_AWARENESS
     if (JUCEApplicationBase::isStandaloneApp())
     {
-        if (setProcessDPIAware == nullptr)
+        if (setProcessDPIAwareness == nullptr)
         {
-            setProcessDPIAware = (SetProcessDPIAwareFunc) getUser32Function ("SetProcessDPIAware");
+            HMODULE shcoreModule = GetModuleHandleA ("SHCore.dll");
 
-            if (setProcessDPIAware != nullptr)
-                setProcessDPIAware();
+            if (shcoreModule != 0)
+            {
+                setProcessDPIAwareness = (SetProcessDPIAwarenessFunc) GetProcAddress (shcoreModule, "SetProcessDpiAwareness");
+                getDPIForMonitor = (GetDPIForMonitorFunc) GetProcAddress (shcoreModule, "GetDpiForMonitor");
+
+                if (setProcessDPIAwareness != nullptr && getDPIForMonitor != nullptr
+//                     && SUCCEEDED (setProcessDPIAwareness (Process_Per_Monitor_DPI_Aware)))
+                     && SUCCEEDED (setProcessDPIAwareness (Process_System_DPI_Aware))) // (keep using this mode temporarily..)
+                    return;
+            }
+
+            if (setProcessDPIAware == nullptr)
+            {
+                setProcessDPIAware = (SetProcessDPIAwareFunc) getUser32Function ("SetProcessDPIAware");
+
+                if (setProcessDPIAware != nullptr)
+                    setProcessDPIAware();
+            }
         }
     }
+   #endif
 }
 
-static double getDPI()
+static double getGlobalDPI()
 {
     setDPIAwareness();
 
@@ -181,7 +228,7 @@ static double getDPI()
 
 double Desktop::getDefaultMasterScale()
 {
-    return JUCEApplicationBase::isStandaloneApp() ? getDPI() / 96.0
+    return JUCEApplicationBase::isStandaloneApp() ? getGlobalDPI() / 96.0
                                                   : 1.0;
 }
 
@@ -328,15 +375,19 @@ public:
 
     LowLevelGraphicsContext* createLowLevelContext() override
     {
+        sendDataChangeMessage();
         return new LowLevelGraphicsSoftwareRenderer (Image (this));
     }
 
-    void initialiseBitmapData (Image::BitmapData& bitmap, int x, int y, Image::BitmapData::ReadWriteMode) override
+    void initialiseBitmapData (Image::BitmapData& bitmap, int x, int y, Image::BitmapData::ReadWriteMode mode) override
     {
         bitmap.data = imageData + x * pixelStride + y * lineStride;
         bitmap.pixelFormat = pixelFormat;
         bitmap.lineStride = lineStride;
         bitmap.pixelStride = pixelStride;
+
+        if (mode != Image::BitmapData::readOnly)
+            sendDataChangeMessage();
     }
 
     ImagePixelData* clone() override
@@ -530,7 +581,8 @@ public:
         setTitle (component.getName());
 
         if ((windowStyleFlags & windowHasDropShadow) != 0
-             && Desktop::canUseSemiTransparentWindows())
+             && Desktop::canUseSemiTransparentWindows()
+             && ((! hasTitleBar()) || SystemStats::getOperatingSystemType() < SystemStats::WinVista))
         {
             shadower = component.getLookAndFeel().createDropShadowerForComponent (&component);
 
@@ -662,8 +714,8 @@ public:
                            r.top  + windowBorder.getTop());
     }
 
-    Point<int> localToGlobal (Point<int> relativePosition) override  { return relativePosition + getScreenPosition(); }
-    Point<int> globalToLocal (Point<int> screenPosition) override    { return screenPosition   - getScreenPosition(); }
+    Point<float> localToGlobal (Point<float> relativePosition) override  { return relativePosition + getScreenPosition().toFloat(); }
+    Point<float> globalToLocal (Point<float> screenPosition) override    { return screenPosition   - getScreenPosition().toFloat(); }
 
     void setAlpha (float newAlpha) override
     {
@@ -721,7 +773,7 @@ public:
                     ShowWindow (hwnd, SW_SHOWNORMAL);
 
                 if (! boundsCopy.isEmpty())
-                    setBounds (boundsCopy, false);
+                    setBounds (ScalingHelpers::scaledScreenPosToUnscaled (component, boundsCopy), false);
             }
             else
             {
@@ -803,7 +855,7 @@ public:
 
     void toBehind (ComponentPeer* other) override
     {
-        if (HWNDComponentPeer* const otherPeer = dynamic_cast <HWNDComponentPeer*> (other))
+        if (HWNDComponentPeer* const otherPeer = dynamic_cast<HWNDComponentPeer*> (other))
         {
             setMinimised (false);
 
@@ -835,7 +887,7 @@ public:
         shouldDeactivateTitleBar = oldDeactivate;
     }
 
-    void textInputRequired (const Point<int>&) override
+    void textInputRequired (Point<int>, TextInputTarget&) override
     {
         if (! hasCreatedCaret)
         {
@@ -860,10 +912,15 @@ public:
 
     void performAnyPendingRepaintsNow() override
     {
-        MSG m;
-        if (component.isVisible()
-             && (PeekMessage (&m, hwnd, WM_PAINT, WM_PAINT, PM_REMOVE) || isUsingUpdateLayeredWindow()))
-            handlePaintMessage();
+        if (component.isVisible())
+        {
+            WeakReference<Component> localRef (&component);
+            MSG m;
+
+            if (isUsingUpdateLayeredWindow() || PeekMessage (&m, hwnd, WM_PAINT, WM_PAINT, PM_REMOVE))
+                if (localRef != nullptr) // (the PeekMessage call can dispatch messages, which may delete this comp)
+                    handlePaintMessage();
+        }
     }
 
     //==============================================================================
@@ -913,7 +970,7 @@ public:
     static ModifierKeys modifiersAtLastCallback;
 
     //==============================================================================
-    class JuceDropTarget    : public ComBaseClassHelper <IDropTarget>
+    class JuceDropTarget    : public ComBaseClassHelper<IDropTarget>
     {
     public:
         JuceDropTarget (HWNDComponentPeer& p)   : ownerInfo (new OwnerInfo (p)) {}
@@ -946,7 +1003,7 @@ public:
             if (ownerInfo == nullptr)
                 return S_FALSE;
 
-            ownerInfo->dragInfo.position = ownerInfo->getMousePos (mousePos);
+            ownerInfo->dragInfo.position = ownerInfo->getMousePos (mousePos).roundToInt();
             const bool wasWanted = ownerInfo->owner.handleDragMove (ownerInfo->dragInfo);
             *pdwEffect = wasWanted ? (DWORD) DROPEFFECT_COPY : (DWORD) DROPEFFECT_NONE;
             return S_OK;
@@ -957,7 +1014,7 @@ public:
             HRESULT hr = updateFileList (pDataObject);
             if (SUCCEEDED (hr))
             {
-                ownerInfo->dragInfo.position = ownerInfo->getMousePos (mousePos);
+                ownerInfo->dragInfo.position = ownerInfo->getMousePos (mousePos).roundToInt();
                 const bool wasWanted = ownerInfo->owner.handleDragDrop (ownerInfo->dragInfo);
                 *pdwEffect = wasWanted ? (DWORD) DROPEFFECT_COPY : (DWORD) DROPEFFECT_NONE;
                 hr = S_OK;
@@ -971,9 +1028,10 @@ public:
         {
             OwnerInfo (HWNDComponentPeer& p) : owner (p) {}
 
-            Point<int> getMousePos (const POINTL& mousePos) const
+            Point<float> getMousePos (const POINTL& mousePos) const
             {
-                return owner.globalToLocal (Point<int> (mousePos.x, mousePos.y));
+                return owner.globalToLocal (Point<float> (static_cast<float> (mousePos.x),
+                                                          static_cast<float> (mousePos.y)));
             }
 
             template <typename CharType>
@@ -1051,13 +1109,13 @@ public:
 
                 if (SUCCEEDED (fileData.error))
                 {
-                    const LPDROPFILES dropFiles = static_cast <const LPDROPFILES> (fileData.data);
+                    const LPDROPFILES dropFiles = static_cast<const LPDROPFILES> (fileData.data);
                     const void* const names = addBytesToPointer (dropFiles, sizeof (DROPFILES));
 
                     if (dropFiles->fWide)
-                        ownerInfo->parseFileList (static_cast <const WCHAR*> (names), fileData.dataSize);
+                        ownerInfo->parseFileList (static_cast<const WCHAR*> (names), fileData.dataSize);
                     else
-                        ownerInfo->parseFileList (static_cast <const char*>  (names), fileData.dataSize);
+                        ownerInfo->parseFileList (static_cast<const char*>  (names), fileData.dataSize);
                 }
                 else
                 {
@@ -1070,6 +1128,20 @@ public:
 
         JUCE_DECLARE_NON_COPYABLE (JuceDropTarget)
     };
+
+   #if JUCE_MODULE_AVAILABLE_juce_audio_plugin_client
+    static bool offerKeyMessageToJUCEWindow (MSG& m)
+    {
+        if (m.message == WM_KEYDOWN || m.message == WM_KEYUP)
+            if (Component::getCurrentlyFocusedComponent() != nullptr)
+                if (HWNDComponentPeer* h = getOwnerOfWindow (m.hwnd))
+                    if (m.message == WM_KEYDOWN ? h->doKeyDown (m.wParam)
+                                                : h->doKeyUp (m.wParam))
+                        return true;
+
+        return false;
+    }
+   #endif
 
 private:
     HWND hwnd, parentToAddTo;
@@ -1160,9 +1232,9 @@ private:
             clearSingletonInstance();
         }
 
-        LPCTSTR getWindowClassName() const noexcept     { return (LPCTSTR) MAKELONG (atom, 0); }
+        LPCTSTR getWindowClassName() const noexcept     { return (LPCTSTR) (pointer_sized_uint) atom; }
 
-        juce_DeclareSingleton_SingleThreaded_Minimal (WindowClassHolder);
+        juce_DeclareSingleton_SingleThreaded_Minimal (WindowClassHolder)
 
     private:
         ATOM atom;
@@ -1238,7 +1310,7 @@ private:
     //==============================================================================
     static void* createWindowCallback (void* userData)
     {
-        static_cast <HWNDComponentPeer*> (userData)->createWindow();
+        static_cast<HWNDComponentPeer*> (userData)->createWindow();
         return nullptr;
     }
 
@@ -1466,10 +1538,14 @@ private:
         // if something in a paint handler calls, e.g. a message box, this can become reentrant and
         // corrupt the image it's using to paint into, so do a check here.
         static bool reentrant = false;
-        if (! (reentrant || dontRepaint))
+        if (! reentrant)
         {
             const ScopedValueSetter<bool> setter (reentrant, true, false);
-            performPaint (dc, rgn, regionType, paintStruct);
+
+            if (dontRepaint)
+                component.handleCommandMessage (0); // (this triggers a repaint in the openGL context)
+            else
+                performPaint (dc, rgn, regionType, paintStruct);
         }
 
         DeleteObject (rgn);
@@ -1577,7 +1653,7 @@ private:
                     handlePaint (*context);
                 }
 
-                static_cast <WindowsBitmapImage*> (offscreenImage.getPixelData())
+                static_cast<WindowsBitmapImage*> (offscreenImage.getPixelData())
                     ->blitToWindow (hwnd, dc, transparent, x, y, updateLayeredWindowAlpha);
             }
 
@@ -1587,9 +1663,9 @@ private:
     }
 
     //==============================================================================
-    void doMouseEvent (Point<int> position)
+    void doMouseEvent (Point<float> position, float pressure)
     {
-        handleMouseEvent (0, position, currentModifiers, getMouseEventTime());
+        handleMouseEvent (0, position, currentModifiers, pressure, getMouseEventTime());
     }
 
     StringArray getAvailableRenderingEngines() override
@@ -1638,8 +1714,22 @@ private:
         return 1000 / 60;  // Throttling the incoming mouse-events seems to still be needed in XP..
     }
 
-    void doMouseMove (Point<int> position)
+    bool isTouchEvent() noexcept
     {
+        if (registerTouchWindow == nullptr)
+            return false;
+
+        LPARAM dw = GetMessageExtraInfo();
+        // see https://msdn.microsoft.com/en-us/library/windows/desktop/ms703320(v=vs.85).aspx
+        return (dw & SIGNATURE_MASK) == MI_WP_SIGNATURE;
+    }
+
+    void doMouseMove (Point<float> position)
+    {
+        // this will be handled by WM_TOUCH
+        if (isTouchEvent())
+            return;
+
         if (! isMouseOver)
         {
             isMouseOver = true;
@@ -1659,7 +1749,7 @@ private:
         }
         else if (! isDragging)
         {
-            if (! contains (position, false))
+            if (! contains (position.roundToInt(), false))
                 return;
         }
 
@@ -1670,25 +1760,36 @@ private:
         if (now >= lastMouseTime + minTimeBetweenMouses)
         {
             lastMouseTime = now;
-            doMouseEvent (position);
+            doMouseEvent (position, MouseInputSource::invalidPressure);
         }
     }
 
-    void doMouseDown (Point<int> position, const WPARAM wParam)
+    void doMouseDown (Point<float> position, const WPARAM wParam)
     {
+        // this will be handled by WM_TOUCH
+        if (isTouchEvent())
+            return;
+
         if (GetCapture() != hwnd)
             SetCapture (hwnd);
 
         doMouseMove (position);
 
-        updateModifiersFromWParam (wParam);
-        isDragging = true;
+        if (isValidPeer (this))
+        {
+            updateModifiersFromWParam (wParam);
+            isDragging = true;
 
-        doMouseEvent (position);
+            doMouseEvent (position, MouseInputSource::invalidPressure);
+        }
     }
 
-    void doMouseUp (Point<int> position, const WPARAM wParam)
+    void doMouseUp (Point<float> position, const WPARAM wParam)
     {
+        // this will be handled by WM_TOUCH
+        if (isTouchEvent())
+            return;
+
         updateModifiersFromWParam (wParam);
         const bool wasDragging = isDragging;
         isDragging = false;
@@ -1700,7 +1801,7 @@ private:
         // NB: under some circumstances (e.g. double-clicking a native title bar), a mouse-up can
         // arrive without a mouse-down, so in that case we need to avoid sending a message.
         if (wasDragging)
-            doMouseEvent (position);
+            doMouseEvent (position, MouseInputSource::invalidPressure);
     }
 
     void doCaptureChanged()
@@ -1720,12 +1821,12 @@ private:
     void doMouseExit()
     {
         isMouseOver = false;
-        doMouseEvent (getCurrentMousePos());
+        doMouseEvent (getCurrentMousePos(), MouseInputSource::invalidPressure);
     }
 
-    ComponentPeer* findPeerUnderMouse (Point<int>& localPos)
+    ComponentPeer* findPeerUnderMouse (Point<float>& localPos)
     {
-        const Point<int> globalPos (getCurrentMousePosGlobal());
+        const Point<int> globalPos (getCurrentMousePosGlobal().roundToInt());
 
         // Because Windows stupidly sends all wheel events to the window with the keyboard
         // focus, we have to redirect them here according to the mouse pos..
@@ -1735,7 +1836,7 @@ private:
         if (peer == nullptr)
             peer = this;
 
-        localPos = peer->globalToLocal (globalPos);
+        localPos = peer->globalToLocal (globalPos.toFloat());
         return peer;
     }
 
@@ -1749,8 +1850,9 @@ private:
         wheel.deltaY = isVertical ? amount / 256.0f : 0.0f;
         wheel.isReversed = false;
         wheel.isSmooth = false;
+        wheel.isInertial = false;
 
-        Point<int> localPos;
+        Point<float> localPos;
         if (ComponentPeer* const peer = findPeerUnderMouse (localPos))
             peer->handleMouseWheel (0, localPos, getMouseEventTime(), wheel);
     }
@@ -1764,7 +1866,7 @@ private:
         if (getGestureInfo != nullptr && getGestureInfo ((HGESTUREINFO) lParam, &gi))
         {
             updateKeyModifiers();
-            Point<int> localPos;
+            Point<float> localPos;
 
             if (ComponentPeer* const peer = findPeerUnderMouse (localPos))
             {
@@ -1806,13 +1908,9 @@ private:
             {
                 const DWORD flags = inputInfo[i].dwFlags;
 
-                if ((flags & TOUCHEVENTF_PRIMARY) == 0  // primary events are handled by WM_LBUTTON etc
-                     && (flags & (TOUCHEVENTF_DOWN | TOUCHEVENTF_MOVE | TOUCHEVENTF_UP)) != 0)
-                {
-                    if (! handleTouchInput (inputInfo[i], (flags & TOUCHEVENTF_DOWN) != 0,
-                                                          (flags & TOUCHEVENTF_UP) != 0))
+                if ((flags & (TOUCHEVENTF_DOWN | TOUCHEVENTF_MOVE | TOUCHEVENTF_UP)) != 0)
+                    if (! handleTouchInput (inputInfo[i], (flags & TOUCHEVENTF_DOWN) != 0, (flags & TOUCHEVENTF_UP) != 0))
                         return 0;  // abandon method if this window was deleted by the callback
-                }
             }
         }
 
@@ -1825,8 +1923,9 @@ private:
         bool isCancel = false;
         const int touchIndex = currentTouches.getIndexOfTouch (touch.dwID);
         const int64 time = getMouseEventTime();
-        const Point<int> pos (globalToLocal (Point<int> ((int) TOUCH_COORD_TO_PIXEL (touch.x),
-                                                         (int) TOUCH_COORD_TO_PIXEL (touch.y))));
+        const Point<float> pos (globalToLocal (Point<float> (static_cast<float> (TOUCH_COORD_TO_PIXEL (touch.x)),
+                                                             static_cast<float> (TOUCH_COORD_TO_PIXEL (touch.y)))));
+        const float pressure = MouseInputSource::invalidPressure;
         ModifierKeys modsToSend (currentModifiers);
 
         if (isDown)
@@ -1835,7 +1934,8 @@ private:
             modsToSend = currentModifiers;
 
             // this forces a mouse-enter/up event, in case for some reason we didn't get a mouse-up before.
-            handleMouseEvent (touchIndex + 1, pos, modsToSend.withoutMouseButtons(), time);
+            handleMouseEvent (touchIndex, pos.toFloat(), modsToSend.withoutMouseButtons(), pressure, time);
+
             if (! isValidPeer (this)) // (in case this component was deleted by the event)
                 return false;
         }
@@ -1847,6 +1947,10 @@ private:
             if (! currentTouches.areAnyTouchesActive())
                 isCancel = true;
         }
+        else
+        {
+            modsToSend = currentModifiers.withoutMouseButtons().withFlags (ModifierKeys::leftButtonModifier);
+        }
 
         if (isCancel)
         {
@@ -1854,13 +1958,15 @@ private:
             currentModifiers = currentModifiers.withoutMouseButtons();
         }
 
-        handleMouseEvent (touchIndex + 1, pos, modsToSend, time);
+        handleMouseEvent (touchIndex, pos.toFloat(), modsToSend, pressure, time);
+
         if (! isValidPeer (this)) // (in case this component was deleted by the event)
             return false;
 
         if (isUp || isCancel)
         {
-            handleMouseEvent (touchIndex + 1, Point<int> (-10, -10), currentModifiers, time);
+            handleMouseEvent (touchIndex, Point<float> (-10.0f, -10.0f), currentModifiers, pressure, time);
+
             if (! isValidPeer (this))
                 return false;
         }
@@ -1961,28 +2067,25 @@ private:
                 used = handleKeyPress (extendedKeyModifier | (int) key, 0) || used;
                 break;
 
-            case VK_ADD:
-            case VK_SUBTRACT:
-            case VK_MULTIPLY:
-            case VK_DIVIDE:
-            case VK_SEPARATOR:
-            case VK_DECIMAL:
-                used = handleKeyUpOrDown (true);
-                break;
-
             default:
                 used = handleKeyUpOrDown (true);
 
                 {
                     MSG msg;
-
                     if (! PeekMessage (&msg, hwnd, WM_CHAR, WM_DEADCHAR, PM_NOREMOVE))
                     {
                         // if there isn't a WM_CHAR or WM_DEADCHAR message pending, we need to
                         // manually generate the key-press event that matches this key-down.
+                        const UINT keyChar  = MapVirtualKey ((UINT) key, 2);
+                        const UINT scanCode = MapVirtualKey ((UINT) key, 0);
+                        BYTE keyState[256];
+                        GetKeyboardState (keyState);
 
-                        const UINT keyChar = MapVirtualKey ((UINT) key, 2);
-                        used = handleKeyPress ((int) LOWORD (keyChar), 0) || used;
+                        WCHAR text[16] = { 0 };
+                        if (ToUnicode ((UINT) key, scanCode, keyState, text, 8, 0) != 1)
+                            text[0] = 0;
+
+                        used = handleKeyPress ((int) LOWORD (keyChar), (juce_wchar) text[0]) || used;
                     }
                 }
 
@@ -2075,7 +2178,13 @@ private:
     bool isConstrainedNativeWindow() const
     {
         return constrainer != nullptr
-                && (styleFlags & (windowHasTitleBar | windowIsResizable)) == (windowHasTitleBar | windowIsResizable);
+                && (styleFlags & (windowHasTitleBar | windowIsResizable)) == (windowHasTitleBar | windowIsResizable)
+                && ! isKioskMode();
+    }
+
+    Rectangle<int> getCurrentScaledBounds (float scale) const
+    {
+        return ScalingHelpers::unscaledScreenPosToScaled (scale, windowBorder.addedTo (ScalingHelpers::scaledScreenPosToUnscaled (scale, component.getBounds())));
     }
 
     LRESULT handleSizeConstraining (RECT& r, const WPARAM wParam)
@@ -2083,17 +2192,17 @@ private:
         if (isConstrainedNativeWindow())
         {
             const float scale = getComponent().getDesktopScaleFactor();
-            Rectangle<int> pos (rectangleFromRECT (r) / scale);
-            const Rectangle<int> current (windowBorder.addedTo (component.getBounds()));
+            Rectangle<int> pos (ScalingHelpers::unscaledScreenPosToScaled (scale, rectangleFromRECT (r)));
+            const Rectangle<int> current (getCurrentScaledBounds (scale));
 
-            constrainer->checkBounds (pos, windowBorder.addedTo (component.getBounds()),
+            constrainer->checkBounds (pos, current,
                                       Desktop::getInstance().getDisplays().getTotalBounds (true),
                                       wParam == WMSZ_TOP    || wParam == WMSZ_TOPLEFT    || wParam == WMSZ_TOPRIGHT,
                                       wParam == WMSZ_LEFT   || wParam == WMSZ_TOPLEFT    || wParam == WMSZ_BOTTOMLEFT,
                                       wParam == WMSZ_BOTTOM || wParam == WMSZ_BOTTOMLEFT || wParam == WMSZ_BOTTOMRIGHT,
                                       wParam == WMSZ_RIGHT  || wParam == WMSZ_TOPRIGHT   || wParam == WMSZ_BOTTOMRIGHT);
 
-            pos *= scale;
+            pos = ScalingHelpers::scaledScreenPosToUnscaled (scale, pos);
             r.left   = pos.getX();
             r.top    = pos.getY();
             r.right  = pos.getRight();
@@ -2111,9 +2220,8 @@ private:
                  && ! Component::isMouseButtonDownAnywhere())
             {
                 const float scale = getComponent().getDesktopScaleFactor();
-                Rectangle<int> pos (wp.x, wp.y, wp.cx, wp.cy);
-                pos /= scale;
-                const Rectangle<int> current (windowBorder.addedTo (component.getBounds()));
+                Rectangle<int> pos (ScalingHelpers::unscaledScreenPosToScaled (scale, Rectangle<int> (wp.x, wp.y, wp.cx, wp.cy)));
+                const Rectangle<int> current (getCurrentScaledBounds (scale));
 
                 constrainer->checkBounds (pos, current,
                                           Desktop::getInstance().getDisplays().getTotalBounds (true),
@@ -2122,7 +2230,7 @@ private:
                                           pos.getY() == current.getY() && pos.getBottom() != current.getBottom(),
                                           pos.getX() == current.getX() && pos.getRight()  != current.getRight());
 
-                pos *= scale;
+                pos = ScalingHelpers::scaledScreenPosToUnscaled (scale, pos);
                 wp.x = pos.getX();
                 wp.y = pos.getY();
                 wp.cx = pos.getWidth();
@@ -2138,6 +2246,22 @@ private:
         return 0;
     }
 
+    bool handlePositionChanged()
+    {
+        const Point<float> pos (getCurrentMousePos());
+
+        if (contains (pos.roundToInt(), false))
+        {
+            doMouseEvent (pos, MouseInputSource::invalidPressure);
+
+            if (! isValidPeer (this))
+                return true;
+        }
+
+        handleMovedOrResized();
+        return ! dontRepaint; // to allow non-accelerated openGL windows to draw themselves correctly..
+    }
+
     void handleAppActivation (const WPARAM wParam)
     {
         modifiersAtLastCallback = -1;
@@ -2148,7 +2272,7 @@ private:
             component.repaint();
             handleMovedOrResized();
 
-            if (! ComponentPeer::isValidPeer (this))
+            if (! isValidPeer (this))
                 return;
         }
 
@@ -2167,6 +2291,24 @@ private:
         else
         {
             handleBroughtToFront();
+        }
+    }
+
+    void handlePowerBroadcast (WPARAM wParam)
+    {
+        if (JUCEApplicationBase* const app = JUCEApplicationBase::getInstance())
+        {
+            switch (wParam)
+            {
+                case PBT_APMSUSPEND:                app->suspended(); break;
+
+                case PBT_APMQUERYSUSPENDFAILED:
+                case PBT_APMRESUMECRITICAL:
+                case PBT_APMRESUMESUSPEND:
+                case PBT_APMRESUMEAUTOMATIC:        app->resumed(); break;
+
+                default: break;
+            }
         }
     }
 
@@ -2218,7 +2360,7 @@ private:
     {
         Desktop& desktop = Desktop::getInstance();
 
-        const_cast <Desktop::Displays&> (desktop.getDisplays()).refresh();
+        const_cast<Desktop::Displays&> (desktop.getDisplays()).refresh();
 
         if (fullScreen && ! isMinimised())
         {
@@ -2228,6 +2370,10 @@ private:
             setWindowPos (hwnd, display.userArea * display.scale,
                           SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOZORDER | SWP_NOSENDCHANGING);
         }
+    }
+
+    void handleDPIChange() // happens when a window moves to a screen with a different DPI.
+    {
     }
 
     //==============================================================================
@@ -2252,17 +2398,18 @@ private:
         return MessageManager::getInstance()->callFunctionOnMessageThread (callback, userData);
     }
 
-    static Point<int> getPointFromLParam (LPARAM lParam) noexcept
+    static Point<float> getPointFromLParam (LPARAM lParam) noexcept
     {
-        return Point<int> (GET_X_LPARAM (lParam), GET_Y_LPARAM (lParam));
+        return Point<float> (static_cast<float> (GET_X_LPARAM (lParam)),
+                             static_cast<float> (GET_Y_LPARAM (lParam)));
     }
 
-    static Point<int> getCurrentMousePosGlobal() noexcept
+    static Point<float> getCurrentMousePosGlobal() noexcept
     {
         return getPointFromLParam (GetMessagePos());
     }
 
-    Point<int> getCurrentMousePos() noexcept
+    Point<float> getCurrentMousePos() noexcept
     {
         return globalToLocal (getCurrentMousePosGlobal());
     }
@@ -2342,18 +2489,10 @@ private:
             case WM_WINDOWPOSCHANGING:     return handlePositionChanging (*(WINDOWPOS*) lParam);
 
             case WM_WINDOWPOSCHANGED:
-                {
-                    const Point<int> pos (getCurrentMousePos());
-                    if (contains (pos, false))
-                        doMouseEvent (pos);
-                }
+                if (handlePositionChanged())
+                    return 0;
 
-                handleMovedOrResized();
-
-                if (dontRepaint)
-                    break;  // needed for non-accelerated openGL windows to draw themselves correctly..
-
-                return 0;
+                break;
 
             //==============================================================================
             case WM_KEYDOWN:
@@ -2462,6 +2601,10 @@ private:
                 }
                 return TRUE;
 
+            case WM_POWERBROADCAST:
+                handlePowerBroadcast (wParam);
+                break;
+
             case WM_SYNCPAINT:
                 return 0;
 
@@ -2470,6 +2613,10 @@ private:
                 // intentional fall-through...
             case WM_SETTINGCHANGE:  // note the fall-through in the previous case!
                 doSettingChange();
+                break;
+
+            case 0x2e0: // WM_DPICHANGED
+                handleDPIChange();
                 break;
 
             case WM_INITMENU:
@@ -2787,7 +2934,7 @@ private:
 
         void moveCandidateWindowToLeftAlignWithSelection (HIMC hImc, ComponentPeer& peer, TextInputTarget* target) const
         {
-            if (Component* const targetComp = dynamic_cast <Component*> (target))
+            if (Component* const targetComp = dynamic_cast<Component*> (target))
             {
                 const Rectangle<int> area (peer.getComponent().getLocalArea (targetComp, target->getCaretRectangle()));
 
@@ -2808,22 +2955,19 @@ private:
 ModifierKeys HWNDComponentPeer::currentModifiers;
 ModifierKeys HWNDComponentPeer::modifiersAtLastCallback;
 
-ComponentPeer* Component::createNewPeer (int styleFlags, void* nativeWindowToAttachTo)
+ComponentPeer* Component::createNewPeer (int styleFlags, void* parentHWND)
 {
-    return new HWNDComponentPeer (*this, styleFlags,
-                                  (HWND) nativeWindowToAttachTo, false);
+    return new HWNDComponentPeer (*this, styleFlags, (HWND) parentHWND, false);
 }
 
-ComponentPeer* createNonRepaintingEmbeddedWindowsPeer (Component* component, void* parent)
+ComponentPeer* createNonRepaintingEmbeddedWindowsPeer (Component& component, void* parentHWND)
 {
-    jassert (component != nullptr);
-
-    return new HWNDComponentPeer (*component, ComponentPeer::windowIgnoresMouseClicks,
-                                  (HWND) parent, true);
+    return new HWNDComponentPeer (component, ComponentPeer::windowIgnoresMouseClicks,
+                                  (HWND) parentHWND, true);
 }
 
 
-juce_ImplementSingleton_SingleThreaded (HWNDComponentPeer::WindowClassHolder);
+juce_ImplementSingleton_SingleThreaded (HWNDComponentPeer::WindowClassHolder)
 
 
 //==============================================================================
@@ -2852,27 +2996,34 @@ bool KeyPress::isKeyCurrentlyDown (const int keyCode)
 {
     SHORT k = (SHORT) keyCode;
 
-    if ((keyCode & extendedKeyModifier) == 0
-         && (k >= (SHORT) 'a' && k <= (SHORT) 'z'))
-        k += (SHORT) 'A' - (SHORT) 'a';
+    if ((keyCode & extendedKeyModifier) == 0)
+    {
+        if (k >= (SHORT) 'a' && k <= (SHORT) 'z')
+            k += (SHORT) 'A' - (SHORT) 'a';
 
-    const SHORT translatedValues[] = { (SHORT) ',', VK_OEM_COMMA,
-                                       (SHORT) '+', VK_OEM_PLUS,
-                                       (SHORT) '-', VK_OEM_MINUS,
-                                       (SHORT) '.', VK_OEM_PERIOD,
-                                       (SHORT) ';', VK_OEM_1,
-                                       (SHORT) ':', VK_OEM_1,
-                                       (SHORT) '/', VK_OEM_2,
-                                       (SHORT) '?', VK_OEM_2,
-                                       (SHORT) '[', VK_OEM_4,
-                                       (SHORT) ']', VK_OEM_6 };
+        // Only translate if extendedKeyModifier flag is not set
+        const SHORT translatedValues[] = { (SHORT) ',', VK_OEM_COMMA,
+                                           (SHORT) '+', VK_OEM_PLUS,
+                                           (SHORT) '-', VK_OEM_MINUS,
+                                           (SHORT) '.', VK_OEM_PERIOD,
+                                           (SHORT) ';', VK_OEM_1,
+                                           (SHORT) ':', VK_OEM_1,
+                                           (SHORT) '/', VK_OEM_2,
+                                           (SHORT) '?', VK_OEM_2,
+                                           (SHORT) '[', VK_OEM_4,
+                                           (SHORT) ']', VK_OEM_6 };
 
-    for (int i = 0; i < numElementsInArray (translatedValues); i += 2)
-        if (k == translatedValues [i])
-            k = translatedValues [i + 1];
+        for (int i = 0; i < numElementsInArray (translatedValues); i += 2)
+            if (k == translatedValues [i])
+                k = translatedValues [i + 1];
+    }
 
     return HWNDComponentPeer::isKeyDown (k);
 }
+
+#if JUCE_MODULE_AVAILABLE_juce_audio_plugin_client
+bool offerKeyMessageToJUCEWindow (MSG& m)   { return HWNDComponentPeer::offerKeyMessageToJUCEWindow (m); }
+#endif
 
 //==============================================================================
 bool JUCE_CALLTYPE Process::isForegroundProcess()
@@ -2888,7 +3039,7 @@ bool JUCE_CALLTYPE Process::isForegroundProcess()
     fg = GetAncestor (fg, GA_ROOT);
 
     for (int i = ComponentPeer::getNumPeers(); --i >= 0;)
-        if (HWNDComponentPeer* const wp = dynamic_cast <HWNDComponentPeer*> (ComponentPeer::getPeer (i)))
+        if (HWNDComponentPeer* const wp = dynamic_cast<HWNDComponentPeer*> (ComponentPeer::getPeer (i)))
             if (wp->isInside (fg))
                 return true;
 
@@ -2914,7 +3065,7 @@ static BOOL CALLBACK enumAlwaysOnTopWindows (HWND hwnd, LPARAM lParam)
             if (GetWindowInfo (hwnd, &info)
                  && (info.dwExStyle & WS_EX_TOPMOST) != 0)
             {
-                *reinterpret_cast <bool*> (lParam) = true;
+                *reinterpret_cast<bool*> (lParam) = true;
                 return FALSE;
             }
         }
@@ -3010,7 +3161,9 @@ void JUCE_CALLTYPE NativeMessageBox::showMessageBoxAsync (AlertWindow::AlertIcon
 bool JUCE_CALLTYPE NativeMessageBox::showOkCancelBox (AlertWindow::AlertIconType iconType,
                                                       const String& title, const String& message,
                                                       Component* associatedComponent,
-                                                      ModalComponentManager::Callback* callback)
+                                                      ModalComponentManager::Callback* callback,
+                                                      const String& /*button1Text*/,
+                                                      const String& /*button2Text*/)
 {
     ScopedPointer<WindowsMessageBox> mb (new WindowsMessageBox (iconType, title, message, associatedComponent,
                                                                 MB_OKCANCEL, callback, callback != nullptr));
@@ -3049,16 +3202,17 @@ bool MouseInputSource::SourceList::addSource()
     return false;
 }
 
-Point<int> MouseInputSource::getCurrentRawMousePosition()
+Point<float> MouseInputSource::getCurrentRawMousePosition()
 {
     POINT mousePos;
     GetCursorPos (&mousePos);
-    return Point<int> (mousePos.x, mousePos.y);
+    return Point<float> ((float) mousePos.x, (float) mousePos.y);
 }
 
-void MouseInputSource::setRawMousePosition (Point<int> newPosition)
+void MouseInputSource::setRawMousePosition (Point<float> newPosition)
 {
-    SetCursorPos (newPosition.x, newPosition.y);
+    SetCursorPos (roundToInt (newPosition.x),
+                  roundToInt (newPosition.y));
 }
 
 //==============================================================================
@@ -3118,7 +3272,7 @@ void SystemClipboard::copyTextToClipboard (const String& text)
             {
                 if (HGLOBAL bufH = GlobalAlloc (GMEM_MOVEABLE | GMEM_DDESHARE | GMEM_ZEROINIT, bytesNeeded + sizeof (WCHAR)))
                 {
-                    if (WCHAR* const data = static_cast <WCHAR*> (GlobalLock (bufH)))
+                    if (WCHAR* const data = static_cast<WCHAR*> (GlobalLock (bufH)))
                     {
                         text.copyToUTF16 (data, bytesNeeded);
                         GlobalUnlock (bufH);
@@ -3155,17 +3309,44 @@ String SystemClipboard::getTextFromClipboard()
 }
 
 //==============================================================================
-void Desktop::setKioskComponent (Component* kioskModeComponent, bool enableOrDisable, bool /*allowMenusAndBars*/)
+void Desktop::setKioskComponent (Component* kioskModeComp, bool enableOrDisable, bool /*allowMenusAndBars*/)
 {
+    if (TopLevelWindow* tlw = dynamic_cast<TopLevelWindow*> (kioskModeComp))
+        tlw->setUsingNativeTitleBar (! enableOrDisable);
+
     if (enableOrDisable)
-        kioskModeComponent->setBounds (getDisplays().getMainDisplay().totalArea);
+        kioskModeComp->setBounds (getDisplays().getMainDisplay().totalArea);
 }
 
 //==============================================================================
-static BOOL CALLBACK enumMonitorsProc (HMONITOR, HDC, LPRECT r, LPARAM userInfo)
+struct MonitorInfo
 {
-    Array <Rectangle<int> >* const monitorCoords = (Array <Rectangle<int> >*) userInfo;
-    monitorCoords->add (rectangleFromRECT (*r));
+    MonitorInfo (Rectangle<int> rect, bool main, double d) noexcept
+        : bounds (rect), dpi (d), isMain (main) {}
+
+    Rectangle<int> bounds;
+    double dpi;
+    bool isMain;
+};
+
+static BOOL CALLBACK enumMonitorsProc (HMONITOR hm, HDC, LPRECT r, LPARAM userInfo)
+{
+    MONITORINFO info = { 0 };
+    info.cbSize = sizeof (info);
+    GetMonitorInfo (hm, &info);
+    const bool isMain = (info.dwFlags & 1 /* MONITORINFOF_PRIMARY */) != 0;
+    double dpi = 0;
+
+    if (getDPIForMonitor != nullptr)
+    {
+        UINT dpiX = 0, dpiY = 0;
+
+        if (SUCCEEDED (getDPIForMonitor (hm, MDT_Default, &dpiX, &dpiY)))
+            dpi = (dpiX + dpiY) / 2.0;
+    }
+
+    ((Array<MonitorInfo>*) userInfo)->add (MonitorInfo (rectangleFromRECT (*r), isMain, dpi));
+
     return TRUE;
 }
 
@@ -3173,31 +3354,40 @@ void Desktop::Displays::findDisplays (float masterScale)
 {
     setDPIAwareness();
 
-    Array <Rectangle<int> > monitors;
+    Array<MonitorInfo> monitors;
     EnumDisplayMonitors (0, 0, &enumMonitorsProc, (LPARAM) &monitors);
+
+    const double globalDPI = getGlobalDPI();
+
+    if (monitors.size() == 0)
+        monitors.add (MonitorInfo (rectangleFromRECT (getWindowRect (GetDesktopWindow())), true, globalDPI));
 
     // make sure the first in the list is the main monitor
     for (int i = 1; i < monitors.size(); ++i)
-        if (monitors.getReference(i).getPosition().isOrigin())
+        if (monitors.getReference(i).isMain)
             monitors.swap (i, 0);
-
-    if (monitors.size() == 0)
-        monitors.add (rectangleFromRECT (getWindowRect (GetDesktopWindow())));
 
     RECT workArea;
     SystemParametersInfo (SPI_GETWORKAREA, 0, &workArea, 0);
 
-    const double dpi = getDPI(); // (this has only one value for all monitors)
-
     for (int i = 0; i < monitors.size(); ++i)
     {
         Display d;
-        d.userArea = d.totalArea = monitors.getReference(i) / masterScale;
-        d.isMain = (i == 0);
-        d.scale = masterScale;
-        d.dpi = dpi;
+        d.userArea  = d.totalArea = monitors.getReference(i).bounds / masterScale;
+        d.isMain    = monitors.getReference(i).isMain;
+        d.dpi       = monitors.getReference(i).dpi;
 
-        if (i == 0)
+        if (d.dpi == 0)
+        {
+            d.scale = masterScale;
+            d.dpi = globalDPI;
+        }
+        else
+        {
+            d.scale = d.dpi / 96.0;
+        }
+
+        if (d.isMain)
             d.userArea = d.userArea.getIntersection (rectangleFromRECT (workArea) / masterScale);
 
         displays.add (d);
@@ -3272,7 +3462,6 @@ void* MouseCursor::createStandardMouseCursor (const MouseCursor::StandardCursorT
         case IBeamCursor:                   cursorName = IDC_IBEAM; break;
         case PointingHandCursor:            cursorName = MAKEINTRESOURCE(32649); break;
         case CrosshairCursor:               cursorName = IDC_CROSS; break;
-        case CopyingCursor:                 break; // can't seem to find one of these in the system list..
 
         case LeftRightResizeCursor:
         case LeftEdgeResizeCursor:
@@ -3305,6 +3494,24 @@ void* MouseCursor::createStandardMouseCursor (const MouseCursor::StandardCursorT
             }
 
             return dragHandCursor;
+        }
+
+        case CopyingCursor:
+        {
+            static void* copyCursor = nullptr;
+
+            if (copyCursor == nullptr)
+            {
+                static unsigned char copyCursorData[] = { 71,73,70,56,57,97,21,0,21,0,145,0,0,0,0,0,255,255,255,0,
+                  128,128,255,255,255,33,249,4,1,0,0,3,0,44,0,0,0,0,21,0, 21,0,0,2,72,4,134,169,171,16,199,98,11,79,90,71,161,93,56,111,
+                  78,133,218,215,137,31,82,154,100,200,86,91,202,142,12,108,212,87,235,174, 15,54,214,126,237,226,37,96,59,141,16,37,18,201,142,157,230,204,51,112,
+                  252,114,147,74,83,5,50,68,147,208,217,16,71,149,252,124,5,0,59,0,0 };
+                const int copyCursorSize = 119;
+
+                copyCursor = CustomMouseCursorInfo (ImageFileFormat::loadFrom (copyCursorData, copyCursorSize), 1, 3).create();
+            }
+
+            return copyCursor;
         }
 
         default:

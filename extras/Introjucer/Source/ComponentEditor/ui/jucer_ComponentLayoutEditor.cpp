@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -282,7 +282,7 @@ void ComponentLayoutEditor::mouseDown (const MouseEvent& e)
     }
     else
     {
-        addChildComponent (&lassoComp);
+        addChildComponent (lassoComp);
         lassoComp.beginLasso (e, this);
     }
 }
@@ -357,9 +357,9 @@ void ComponentLayoutEditor::filesDropped (const StringArray& filenames, int x, i
         JucerComponentHandler jucerDocHandler;
         layout.getDocument()->beginTransaction();
 
-        if (TestComponent* newOne = dynamic_cast <TestComponent*> (layout.addNewComponent (&jucerDocHandler,
-                                                                                           x - subCompHolder->getX(),
-                                                                                           y - subCompHolder->getY())))
+        if (TestComponent* newOne = dynamic_cast<TestComponent*> (layout.addNewComponent (&jucerDocHandler,
+                                                                                          x - subCompHolder->getX(),
+                                                                                          y - subCompHolder->getY())))
         {
             JucerComponentHandler::setJucerComponentFile (*layout.getDocument(), newOne,
                                                           f.getRelativePathFrom (document.getCppFile().getParentDirectory()));
@@ -368,6 +368,31 @@ void ComponentLayoutEditor::filesDropped (const StringArray& filenames, int x, i
 
         layout.getDocument()->beginTransaction();
     }
+}
+
+bool ComponentLayoutEditor::isInterestedInDragSource (const SourceDetails& dragSourceDetails)
+{
+    if (dragSourceDetails.description != projectItemDragType)
+        return false;
+
+    OwnedArray<Project::Item> selectedNodes;
+    ProjectContentComponent::getSelectedProjectItemsBeingDragged (dragSourceDetails, selectedNodes);
+
+    return selectedNodes.size() > 0;
+}
+
+void ComponentLayoutEditor::itemDropped (const SourceDetails& dragSourceDetails)
+{
+    OwnedArray <Project::Item> selectedNodes;
+    ProjectContentComponent::getSelectedProjectItemsBeingDragged (dragSourceDetails, selectedNodes);
+
+    StringArray filenames;
+
+    for (int i = 0; i < selectedNodes.size(); ++i)
+        if (selectedNodes.getUnchecked(i)->getFile().hasFileExtension (".cpp"))
+            filenames.add (selectedNodes.getUnchecked(i)->getFile().getFullPathName());
+
+    filesDropped (filenames, dragSourceDetails.localPosition.x, dragSourceDetails.localPosition.y);
 }
 
 ComponentOverlayComponent* ComponentLayoutEditor::getOverlayCompFor (Component* compToFind) const

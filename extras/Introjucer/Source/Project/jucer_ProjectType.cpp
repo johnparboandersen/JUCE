@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -87,6 +87,7 @@ public:
 
         exporter.msvcIsWindowsSubsystem = true;
         exporter.msvcTargetSuffix = ".exe";
+        exporter.msvcExtraPreprocessorDefs.set ("_CRT_SECURE_NO_WARNINGS", "");
     }
 };
 
@@ -118,6 +119,7 @@ public:
         exporter.msvcIsWindowsSubsystem = false;
         exporter.msvcTargetSuffix = ".exe";
         exporter.msvcExtraPreprocessorDefs.set ("_CONSOLE", "");
+        exporter.msvcExtraPreprocessorDefs.set ("_CRT_SECURE_NO_WARNINGS", "");
     }
 };
 
@@ -147,6 +149,7 @@ public:
         exporter.makefileTargetSuffix = ".a";
         exporter.msvcTargetSuffix = ".lib";
         exporter.msvcExtraPreprocessorDefs.set ("_LIB", "");
+        exporter.msvcExtraPreprocessorDefs.set ("_CRT_SECURE_NO_WARNINGS", "");
     }
 };
 
@@ -177,6 +180,7 @@ public:
         exporter.makefileTargetSuffix = ".so";
         exporter.msvcTargetSuffix = ".dll";
         exporter.msvcExtraPreprocessorDefs.set ("_LIB", "");
+        exporter.msvcExtraPreprocessorDefs.set ("_CRT_SECURE_NO_WARNINGS", "");
     }
 };
 
@@ -194,15 +198,19 @@ public:
         const String sanitisedProjectName (CodeHelpers::makeValidIdentifier (project.getTitle(), false, true, false));
 
         setValueIfVoid (shouldBuildVST (project), true);
+        setValueIfVoid (shouldBuildVST3 (project), false);
         setValueIfVoid (shouldBuildAU (project),  true);
+        setValueIfVoid (shouldBuildRTAS (project), false);
+        setValueIfVoid (shouldBuildAAX (project), false);
 
         setValueIfVoid (getPluginName (project),                   project.getTitle());
         setValueIfVoid (getPluginDesc (project),                   project.getTitle());
         setValueIfVoid (getPluginManufacturer (project),           "yourcompany");
         setValueIfVoid (getPluginManufacturerCode (project),       "Manu");
-        setValueIfVoid (getPluginCode (project),                   "Plug");
+        setValueIfVoid (getPluginCode (project),                   makeValid4CC (project.getProjectUID() + project.getProjectUID()));
         setValueIfVoid (getPluginChannelConfigs (project),         "{1, 1}, {2, 2}");
         setValueIfVoid (getPluginIsSynth (project),                false);
+        setValueIfVoid (getPluginAcceptsSideChain (project),       false);
         setValueIfVoid (getPluginWantsMidiInput (project),         false);
         setValueIfVoid (getPluginProducesMidiOut (project),        false);
         setValueIfVoid (getPluginSilenceInProducesSilenceOut (project), false);
@@ -218,6 +226,8 @@ public:
     {
         props.add (new BooleanPropertyComponent (shouldBuildVST (project), "Build VST", "Enabled"),
                    "Whether the project should produce a VST plugin.");
+        props.add (new BooleanPropertyComponent (shouldBuildVST3 (project), "Build VST3", "Enabled"),
+                   "Whether the project should produce a VST3 plugin.");
         props.add (new BooleanPropertyComponent (shouldBuildAU (project), "Build AudioUnit", "Enabled"),
                    "Whether the project should produce an AudioUnit plugin.");
         props.add (new BooleanPropertyComponent (shouldBuildRTAS (project), "Build RTAS", "Enabled"),
@@ -237,13 +247,16 @@ public:
         props.add (new TextPropertyComponent (getPluginCode (project), "Plugin Code", 4, false),
                    "A four-character unique ID for your plugin. Note that for AU compatibility, this must contain at least one upper-case letter!");
 
-        props.add (new TextPropertyComponent (getPluginChannelConfigs (project), "Plugin Channel Configurations", 256, false),
+        props.add (new TextPropertyComponent (getPluginChannelConfigs (project), "Plugin Channel Configurations", 1024, false),
                    "This is the set of input/output channel configurations that your plugin can handle.  The list is a comma-separated set of pairs of values in the form { numInputs, numOutputs }, and each "
                    "pair indicates a valid configuration that the plugin can handle. So for example, {1, 1}, {2, 2} means that the plugin can be used in just two configurations: either with 1 input "
                    "and 1 output, or with 2 inputs and 2 outputs.");
 
         props.add (new BooleanPropertyComponent (getPluginIsSynth (project), "Plugin is a Synth", "Is a Synth"),
                    "Enable this if you want your plugin to be treated as a synth or generator. It doesn't make much difference to the plugin itself, but some hosts treat synths differently to other plugins.");
+
+        props.add (new BooleanPropertyComponent (getPluginAcceptsSideChain (project), "Plugin Accepts Side-Chain", "Accepts Side-Chain"),
+                   "Enable this if you want your plugin to be accept a side-chain or key input.");
 
         props.add (new BooleanPropertyComponent (getPluginWantsMidiInput (project), "Plugin Midi Input", "Plugin wants midi input"),
                    "Enable this if you want your plugin to accept midi messages.");
@@ -262,6 +275,9 @@ public:
 
         props.add (new TextPropertyComponent (getPluginAUMainType (project), "Plugin AU Main Type", 128, false),
                    "In an AU, this is the value that is set as JucePlugin_AUMainType. Leave it blank unless you want to use a custom value.");
+
+        props.add (new TextPropertyComponent (getPluginVSTCategory (project), "VST Category", 64, false),
+                   "In a VST, this is the value that is set as JucePlugin_VSTCategory. Leave it blank unless you want to use a custom value.");
 
         props.add (new TextPropertyComponent (getPluginRTASCategory (project), "Plugin RTAS Category", 64, false),
                    "(Leave this blank if your plugin is a synth). This is one of the RTAS categories from FicPluginEnums.h, such as: ePlugInCategory_None, ePlugInCategory_EQ, ePlugInCategory_Dynamics, "
@@ -293,8 +309,16 @@ public:
 
         exporter.msvcTargetSuffix = ".dll";
         exporter.msvcIsDLL = true;
-
+        exporter.msvcExtraPreprocessorDefs.set ("_CRT_SECURE_NO_WARNINGS", "");
         exporter.makefileIsDLL = true;
+    }
+
+    static String makeValid4CC (const String& seed)
+    {
+        String s (CodeHelpers::makeValidIdentifier (seed, false, true, false) + "xxxx");
+
+        return s.substring (0, 1).toUpperCase()
+             + s.substring (1, 4).toLowerCase();
     }
 };
 
@@ -336,6 +360,7 @@ public:
 
         exporter.msvcTargetSuffix = ".dll";
         exporter.msvcIsDLL = true;
+        exporter.msvcExtraPreprocessorDefs.set ("_CRT_SECURE_NO_WARNINGS", "");
 
         exporter.makefileIsDLL = true;
     }

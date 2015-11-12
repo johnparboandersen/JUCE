@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -35,7 +35,8 @@ Project::Project (const File& f)
                          String ("*") + projectFileExtension,
                          "Choose a Jucer project to load",
                          "Save Jucer project"),
-      projectRoot (Ids::JUCERPROJECT)
+      projectRoot (Ids::JUCERPROJECT),
+      isSaving (false)
 {
     Logger::writeToLog ("Loading project: " + f.getFullPathName());
     setFile (f);
@@ -184,10 +185,10 @@ void Project::updateOldModulePaths()
 }
 
 //==============================================================================
-static int getVersionElement (const String& v, int index)
+static int getVersionElement (StringRef v, int index)
 {
     StringArray parts;
-    parts.addTokens (v, "., ", String::empty);
+    parts.addTokens (v, "., ", StringRef());
 
     return parts [parts.size() - index - 1].getIntValue();
 }
@@ -226,12 +227,17 @@ void Project::warnAboutOldIntrojucerVersion()
     available.scanAllKnownFolders (*this);
 
     if (isAnyModuleNewerThanIntrojucer (available.modules))
-        AlertWindow::showMessageBoxAsync (AlertWindow::WarningIcon,
-                                          "Introjucer",
-                                          "This version of the introjucer is out-of-date!"
-                                          "\n\n"
-                                          "Always make sure that you're running the very latest version, "
-                                          "preferably compiled directly from the JUCE repository that you're working with!");
+    {
+        if (IntrojucerApp::getApp().isRunningCommandLine)
+            std::cout <<  "WARNING! This version of the introjucer is out-of-date!" << std::endl;
+        else
+            AlertWindow::showMessageBoxAsync (AlertWindow::WarningIcon,
+                                              "Introjucer",
+                                              "This version of the introjucer is out-of-date!"
+                                              "\n\n"
+                                              "Always make sure that you're running the very latest version, "
+                                              "preferably compiled directly from the JUCE repository that you're working with!");
+    }
 }
 
 //==============================================================================
@@ -280,11 +286,16 @@ Result Project::saveDocument (const File& file)
 
 Result Project::saveProject (const File& file, bool isCommandLineApp)
 {
+    if (isSaving)
+        return Result::ok();
+
     updateProjectSettings();
     sanitiseConfigFlags();
 
     if (! isCommandLineApp)
         registerRecentFile (file);
+
+    const ScopedValueSetter<bool> vs (isSaving, true, false);
 
     ProjectSaver saver (*this, file);
     return saver.save (! isCommandLineApp);
@@ -305,10 +316,10 @@ void Project::valueTreePropertyChanged (ValueTree&, const Identifier& property)
     changed();
 }
 
-void Project::valueTreeChildAdded (ValueTree&, ValueTree&)      { changed(); }
-void Project::valueTreeChildRemoved (ValueTree&, ValueTree&)    { changed(); }
-void Project::valueTreeChildOrderChanged (ValueTree&)           { changed(); }
-void Project::valueTreeParentChanged (ValueTree&)               {}
+void Project::valueTreeChildAdded (ValueTree&, ValueTree&)          { changed(); }
+void Project::valueTreeChildRemoved (ValueTree&, ValueTree&, int)   { changed(); }
+void Project::valueTreeChildOrderChanged (ValueTree&, int, int)     { changed(); }
+void Project::valueTreeParentChanged (ValueTree&)                   {}
 
 //==============================================================================
 File Project::resolveFilename (String filename) const
@@ -371,6 +382,12 @@ void Project::createPropertyEditors (PropertyListBuilder& props)
     props.add (new TextPropertyComponent (getCompanyName(), "Company Name", 256, false),
                "Your company name, which will be added to the properties of the binary where possible");
 
+    props.add (new TextPropertyComponent (getCompanyWebsite(), "Company Website", 256, false),
+               "Your company website, which will be added to the properties of the binary where possible");
+
+    props.add (new TextPropertyComponent (getCompanyEmail(), "Company E-mail", 256, false),
+               "Your company e-mail, which will be added to the properties of the binary where possible");
+
     {
         StringArray projectTypeNames;
         Array<var> projectTypeCodes;
@@ -427,25 +444,25 @@ void Project::createPropertyEditors (PropertyListBuilder& props)
 }
 
 //==============================================================================
-static StringArray getConfigs (const Project& p)
+static StringArray getVersionSegments (const Project& p)
 {
-    StringArray configs;
-    configs.addTokens (p.getVersionString(), ",.", String::empty);
-    configs.trim();
-    configs.removeEmptyStrings();
-    return configs;
+    StringArray segments;
+    segments.addTokens (p.getVersionString(), ",.", "");
+    segments.trim();
+    segments.removeEmptyStrings();
+    return segments;
 }
 
 int Project::getVersionAsHexInteger() const
 {
-    const StringArray configs (getConfigs (*this));
+    const StringArray segments (getVersionSegments (*this));
 
-    int value = (configs[0].getIntValue() << 16)
-                 + (configs[1].getIntValue() << 8)
-                  + configs[2].getIntValue();
+    int value = (segments[0].getIntValue() << 16)
+                 + (segments[1].getIntValue() << 8)
+                  + segments[2].getIntValue();
 
-    if (configs.size() >= 4)
-        value = (value << 8) + configs[3].getIntValue();
+    if (segments.size() >= 4)
+        value = (value << 8) + segments[3].getIntValue();
 
     return value;
 }
@@ -515,10 +532,10 @@ Project::Item Project::Item::createCopy()         { Item i (*this); i.state = i.
 String Project::Item::getID() const               { return state [Ids::ID]; }
 void Project::Item::setID (const String& newID)   { state.setProperty (Ids::ID, newID, nullptr); }
 
-Image Project::Item::loadAsImageFile() const
+Drawable* Project::Item::loadAsImageFile() const
 {
-    return isValid() ? ImageCache::getFromFile (getFile())
-                     : Image::null;
+    return isValid() ? Drawable::createFromImageFile (getFile())
+                     : nullptr;
 }
 
 Project::Item Project::Item::createGroup (Project& project, const String& name, const String& uid)
@@ -533,7 +550,12 @@ Project::Item Project::Item::createGroup (Project& project, const String& name, 
 bool Project::Item::isFile() const          { return state.hasType (Ids::FILE); }
 bool Project::Item::isGroup() const         { return state.hasType (Ids::GROUP) || isMainGroup(); }
 bool Project::Item::isMainGroup() const     { return state.hasType (Ids::MAINGROUP); }
-bool Project::Item::isImageFile() const     { return isFile() && ImageFileFormat::findImageFormatForFileExtension (getFile()) != nullptr; }
+
+bool Project::Item::isImageFile() const
+{
+    return isFile() && (ImageFileFormat::findImageFormatForFileExtension (getFile()) != nullptr
+                          || getFile().hasFileExtension ("svg"));
+}
 
 Project::Item Project::Item::findItemWithID (const String& targetId) const
 {
@@ -550,7 +572,7 @@ Project::Item Project::Item::findItemWithID (const String& targetId) const
         }
     }
 
-    return Item (project, ValueTree::invalid);
+    return Item (project, ValueTree());
 }
 
 bool Project::Item::canContain (const Item& child) const
@@ -570,8 +592,11 @@ bool Project::Item::shouldBeAddedToTargetProject() const    { return isFile(); }
 Value Project::Item::getShouldCompileValue()                { return state.getPropertyAsValue (Ids::compile, getUndoManager()); }
 bool Project::Item::shouldBeCompiled() const                { return state [Ids::compile]; }
 
-Value Project::Item::getShouldAddToResourceValue()          { return state.getPropertyAsValue (Ids::resource, getUndoManager()); }
+Value Project::Item::getShouldAddToBinaryResourcesValue()   { return state.getPropertyAsValue (Ids::resource, getUndoManager()); }
 bool Project::Item::shouldBeAddedToBinaryResources() const  { return state [Ids::resource]; }
+
+Value Project::Item::getShouldAddToXcodeResourcesValue()    { return state.getPropertyAsValue (Ids::xcodeResource, getUndoManager()); }
+bool Project::Item::shouldBeAddedToXcodeResources() const   { return state [Ids::xcodeResource]; }
 
 Value Project::Item::getShouldInhibitWarningsValue()        { return state.getPropertyAsValue (Ids::noWarnings, getUndoManager()); }
 bool Project::Item::shouldInhibitWarnings() const           { return state [Ids::noWarnings]; }
@@ -603,7 +628,6 @@ void Project::Item::setFile (const File& file)
 
 void Project::Item::setFile (const RelativePath& file)
 {
-    jassert (file.getRoot() == RelativePath::projectFolder);
     jassert (isFile());
     state.setProperty (Ids::file, file.toUnixStyle(), getUndoManager());
     state.setProperty (Ids::name, file.getFileName(), getUndoManager());
@@ -645,7 +669,7 @@ Project::Item Project::Item::findItemForFile (const File& file) const
         }
     }
 
-    return Item (project, ValueTree::invalid);
+    return Item (project, ValueTree());
 }
 
 File Project::Item::determineGroupFolder() const
@@ -728,7 +752,7 @@ struct ItemSorter
 {
     static int compareElements (const ValueTree& first, const ValueTree& second)
     {
-        return first [Ids::name].toString().compareIgnoreCase (second [Ids::name].toString());
+        return first [Ids::name].toString().compareNatural (second [Ids::name].toString());
     }
 };
 
@@ -740,24 +764,42 @@ struct ItemSorterWithGroupsAtStart
         const bool secondIsGroup = second.hasType (Ids::GROUP);
 
         if (firstIsGroup == secondIsGroup)
-            return first [Ids::name].toString().compareIgnoreCase (second [Ids::name].toString());
+            return first [Ids::name].toString().compareNatural (second [Ids::name].toString());
 
         return firstIsGroup ? -1 : 1;
     }
 };
 
-void Project::Item::sortAlphabetically (bool keepGroupsAtStart)
+static void sortGroup (ValueTree& state, bool keepGroupsAtStart, UndoManager* undoManager)
 {
     if (keepGroupsAtStart)
     {
         ItemSorterWithGroupsAtStart sorter;
-        state.sort (sorter, getUndoManager(), true);
+        state.sort (sorter, undoManager, true);
     }
     else
     {
         ItemSorter sorter;
-        state.sort (sorter, getUndoManager(), true);
+        state.sort (sorter, undoManager, true);
     }
+}
+
+static bool isGroupSorted (const ValueTree& state, bool keepGroupsAtStart)
+{
+    if (state.getNumChildren() == 0)
+        return false;
+
+    if (state.getNumChildren() == 1)
+        return true;
+
+    ValueTree stateCopy (state.createCopy());
+    sortGroup (stateCopy, keepGroupsAtStart, nullptr);
+    return stateCopy.isEquivalentTo (state);
+}
+
+void Project::Item::sortAlphabetically (bool keepGroupsAtStart)
+{
+    sortGroup (state, keepGroupsAtStart, getUndoManager());
 }
 
 Project::Item Project::Item::getOrCreateSubGroup (const String& name)
@@ -787,20 +829,18 @@ Project::Item Project::Item::addNewSubGroup (const String& name, int insertIndex
     return group;
 }
 
-bool Project::Item::addFile (const File& file, int insertIndex, const bool shouldCompile)
+bool Project::Item::addFileAtIndex (const File& file, int insertIndex, const bool shouldCompile)
 {
     if (file == File::nonexistent || file.isHidden() || file.getFileName().startsWithChar ('.'))
         return false;
 
     if (file.isDirectory())
     {
-        Item group (addNewSubGroup (file.getFileNameWithoutExtension(), insertIndex));
+        Item group (addNewSubGroup (file.getFileName(), insertIndex));
 
         for (DirectoryIterator iter (file, false, "*", File::findFilesAndDirectories); iter.next();)
             if (! project.getMainGroup().findItemForFile (iter.getFile()).isValid())
-                group.addFile (iter.getFile(), -1, shouldCompile);
-
-        group.sortAlphabetically (false);
+                group.addFileRetainingSortOrder (iter.getFile(), shouldCompile);
     }
     else if (file.existsAsFile())
     {
@@ -815,13 +855,27 @@ bool Project::Item::addFile (const File& file, int insertIndex, const bool shoul
     return true;
 }
 
+bool Project::Item::addFileRetainingSortOrder (const File& file, bool shouldCompile)
+{
+    const bool wasSortedGroupsNotFirst = isGroupSorted (state, false);
+    const bool wasSortedGroupsFirst    = isGroupSorted (state, true);
+
+    if (! addFileAtIndex (file, 0, shouldCompile))
+        return false;
+
+    if (wasSortedGroupsNotFirst || wasSortedGroupsFirst)
+        sortAlphabetically (wasSortedGroupsFirst);
+
+    return true;
+}
+
 void Project::Item::addFileUnchecked (const File& file, int insertIndex, const bool shouldCompile)
 {
     Item item (project, ValueTree (Ids::FILE));
     item.initialiseMissingProperties();
     item.getNameValue() = file.getFileName();
-    item.getShouldCompileValue() = shouldCompile && file.hasFileExtension ("cpp;mm;c;m;cc;cxx;r");
-    item.getShouldAddToResourceValue() = project.shouldBeAddedToBinaryResourcesByDefault (file);
+    item.getShouldCompileValue() = shouldCompile && file.hasFileExtension (fileTypesToCompileByDefault);
+    item.getShouldAddToBinaryResourcesValue() = project.shouldBeAddedToBinaryResourcesByDefault (file);
 
     if (canContain (item))
     {
@@ -836,7 +890,7 @@ bool Project::Item::addRelativeFile (const RelativePath& file, int insertIndex, 
     item.initialiseMissingProperties();
     item.getNameValue() = file.getFileName();
     item.getShouldCompileValue() = shouldCompile;
-    item.getShouldAddToResourceValue() = project.shouldBeAddedToBinaryResourcesByDefault (file);
+    item.getShouldAddToBinaryResourcesValue() = project.shouldBeAddedToBinaryResourcesByDefault (file);
 
     if (canContain (item))
     {

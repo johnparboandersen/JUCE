@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,7 +22,6 @@
   ==============================================================================
 */
 
-
 class ModulesPanel  : public Component,
                       private TableListBoxModel,
                       private ValueTree::Listener,
@@ -33,7 +32,9 @@ public:
         : project (p),
           modulesValueTree (p.getModules().state),
           addWebModuleButton ("Download and add a module..."),
-          updateModuleButton ("Install updates to modules...")
+          updateModuleButton ("Install updates to modules..."),
+          setCopyModeButton  ("Set copy-mode for all modules..."),
+          copyPathButton ("Set paths for all modules...")
     {
         table.getHeader().addColumn ("Module", nameCol, 180, 100, 400, TableHeaderComponent::notSortable);
         table.getHeader().addColumn ("Installed Version", versionCol, 100, 100, 100, TableHeaderComponent::notSortable);
@@ -43,15 +44,21 @@ public:
 
         table.setModel (this);
         table.setColour (TableListBox::backgroundColourId, Colours::transparentBlack);
-        addAndMakeVisible (&table);
+        addAndMakeVisible (table);
         table.updateContent();
         table.setRowHeight (20);
 
-        addAndMakeVisible (&addWebModuleButton);
-        addAndMakeVisible (&updateModuleButton);
+        addAndMakeVisible (addWebModuleButton);
+        addAndMakeVisible (updateModuleButton);
+        addAndMakeVisible (setCopyModeButton);
+        addAndMakeVisible (copyPathButton);
         addWebModuleButton.addListener (this);
         updateModuleButton.addListener (this);
         updateModuleButton.setEnabled (false);
+        setCopyModeButton.addListener (this);
+        setCopyModeButton.setTriggeredOnMouseDown (true);
+        copyPathButton.addListener (this);
+        copyPathButton.setTriggeredOnMouseDown (true);
 
         modulesValueTree.addListener (this);
         lookAndFeelChanged();
@@ -72,9 +79,15 @@ public:
         table.setBounds (r.removeFromTop (table.getRowPosition (getNumRows() - 1, true).getBottom() + 20));
 
         Rectangle<int> buttonRow (r.removeFromTop (32).removeFromBottom (28));
-        addWebModuleButton.setBounds (buttonRow.removeFromLeft (jmin (260, r.getWidth() / 2)));
+        addWebModuleButton.setBounds (buttonRow.removeFromLeft (jmin (260, r.getWidth() / 3)));
         buttonRow.removeFromLeft (8);
-        updateModuleButton.setBounds (buttonRow.removeFromLeft (jmin (260, r.getWidth() / 2)));
+        updateModuleButton.setBounds (buttonRow.removeFromLeft (jmin (260, r.getWidth() / 3)));
+        buttonRow.removeFromLeft (8);
+
+        buttonRow = r.removeFromTop (34).removeFromBottom (28);
+        setCopyModeButton.setBounds (buttonRow.removeFromLeft (jmin (260, r.getWidth() / 3)));
+        buttonRow.removeFromLeft (8);
+        copyPathButton.setBounds (buttonRow.removeFromLeft (jmin (260, r.getWidth() / 3)));
     }
 
     int getNumRows() override
@@ -89,7 +102,7 @@ public:
         g.fillRect (0, 0, width, height - 1);
     }
 
-    void paintCell (Graphics& g, int rowNumber, int columnId, int width, int height, bool rowIsSelected) override
+    void paintCell (Graphics& g, int rowNumber, int columnId, int width, int height, bool /*rowIsSelected*/) override
     {
         String text;
         const String moduleID (project.getModules().getModuleID (rowNumber));
@@ -161,7 +174,6 @@ public:
     void webUpdateFinished (const ModuleList& newList)
     {
         listFromWebsite = new ModuleList (newList);
-        webUpdateThread = nullptr;
 
         table.updateContent();
         table.repaint();
@@ -169,12 +181,12 @@ public:
         updateModuleButton.setEnabled (getUpdatableModules().size() != 0);
     }
 
-    void buttonClicked (Button* b)
+    void buttonClicked (Button* b) override
     {
-        if (b == &addWebModuleButton)
-            showAddModuleMenu();
-        else if (b == &updateModuleButton)
-            showUpdateModulesMenu();
+        if (b == &addWebModuleButton)       showAddModuleMenu();
+        else if (b == &updateModuleButton)  showUpdateModulesMenu();
+        else if (b == &setCopyModeButton)   showCopyModeMenu();
+        else if (b == &copyPathButton)      showSetPathsMenu();
     }
 
 private:
@@ -190,13 +202,13 @@ private:
     Project& project;
     ValueTree modulesValueTree;
     TableListBox table;
-    TextButton addWebModuleButton, updateModuleButton;
+    TextButton addWebModuleButton, updateModuleButton, setCopyModeButton, copyPathButton;
     ScopedPointer<ModuleList> listFromWebsite;
 
     void valueTreePropertyChanged (ValueTree&, const Identifier&) override    { itemChanged(); }
     void valueTreeChildAdded (ValueTree&, ValueTree&) override                { itemChanged(); }
-    void valueTreeChildRemoved (ValueTree&, ValueTree&) override              { itemChanged(); }
-    void valueTreeChildOrderChanged (ValueTree&) override                     { itemChanged(); }
+    void valueTreeChildRemoved (ValueTree&, ValueTree&, int) override         { itemChanged(); }
+    void valueTreeChildOrderChanged (ValueTree&, int, int) override           { itemChanged(); }
     void valueTreeParentChanged (ValueTree&) override                         { itemChanged(); }
 
     void itemChanged()
@@ -311,6 +323,56 @@ private:
                 DownloadAndInstallThread::addModuleFromWebsite (project, *md);
     }
 
+    void showCopyModeMenu()
+    {
+        PopupMenu m;
+        m.addItem (1, "Set all modules to copy locally");
+        m.addItem (2, "Set all modules to not copy locally");
+
+        int res = m.showAt (&setCopyModeButton);
+
+        if (res != 0)
+            project.getModules().setLocalCopyModeForAllModules (res == 1);
+    }
+
+    void showSetPathsMenu()
+    {
+        EnabledModuleList& moduleList = project.getModules();
+
+        const String moduleToCopy (moduleList.getModuleID (table.getSelectedRow()));
+
+        if (moduleToCopy.isNotEmpty())
+        {
+            PopupMenu m;
+            m.addItem (1, "Copy the paths from the module '" + moduleToCopy + "' to all other modules");
+
+            int res = m.showAt (&copyPathButton);
+
+            if (res != 0)
+            {
+                for (Project::ExporterIterator exporter (project); exporter.next();)
+                {
+                    for (int i = 0; i < moduleList.getNumModules(); ++i)
+                    {
+                        String modID = moduleList.getModuleID (i);
+
+                        if (modID != moduleToCopy)
+                            exporter->getPathForModuleValue (modID) = exporter->getPathForModuleValue (moduleToCopy).getValue();
+                    }
+                }
+            }
+
+            table.repaint();
+        }
+        else
+        {
+            PopupMenu m;
+            m.addItem (1, "Copy the paths from the selected module to all other modules", false);
+
+            m.showAt (&copyPathButton);
+        }
+    }
+
     struct WebsiteUpdateFetchThread  : private Thread,
                                        private AsyncUpdater
     {
@@ -326,8 +388,23 @@ private:
 
         void run() override
         {
-            if (list.loadFromWebsite() && ! threadShouldExit())
+            static Time lastDownloadTime;
+            static ModuleList lastList;
+
+            if (Time::getCurrentTime() < lastDownloadTime + RelativeTime::minutes (2.0))
+            {
+                list = lastList;
                 triggerAsyncUpdate();
+            }
+            else
+            {
+                if (list.loadFromWebsite() && ! threadShouldExit())
+                {
+                    lastList = list;
+                    lastDownloadTime = Time::getCurrentTime();
+                    triggerAsyncUpdate();
+                }
+            }
         }
 
         void handleAsyncUpdate() override
@@ -340,124 +417,124 @@ private:
         ModulesPanel& panel;
     };
 
+    //==============================================================================
+    class DownloadAndInstallThread   : public ThreadWithProgressWindow
+    {
+    public:
+        DownloadAndInstallThread (const Array<ModuleDescription>& modulesToInstall)
+            : ThreadWithProgressWindow ("Installing New Modules", true, true),
+              result (Result::ok()),
+              modules (modulesToInstall)
+        {
+        }
+
+        static void updateModulesFromWeb (Project& project, const Array<ModuleDescription>& mods)
+        {
+            DownloadAndInstallThread d (mods);
+
+            if (d.runThread())
+            {
+                if (d.result.failed())
+                {
+                    AlertWindow::showMessageBoxAsync (AlertWindow::WarningIcon,
+                                                      "Module Install Failed",
+                                                      d.result.getErrorMessage());
+                }
+                else
+                {
+                    for (int i = 0; i < d.modules.size(); ++i)
+                        project.getModules().addModule (d.modules.getReference(i).manifestFile,
+                                                        project.getModules().areMostModulesCopiedLocally());
+                }
+            }
+        }
+
+        static void addModuleFromWebsite (Project& project, const ModuleDescription& module)
+        {
+            Array<ModuleDescription> mods;
+            mods.add (module);
+
+            static File lastLocation (EnabledModuleList::findDefaultModulesFolder (project));
+
+            FileChooser fc ("Select the parent folder for the new module...", lastLocation, String::empty, false);
+
+            if (fc.browseForDirectory())
+            {
+                lastLocation = fc.getResult();
+
+                if (lastLocation.getChildFile (ModuleDescription::getManifestFileName()).exists())
+                {
+                    AlertWindow::showMessageBoxAsync (AlertWindow::WarningIcon,
+                                                      "Adding Module",
+                                                      "You chose a folder that appears to be a module.\n\n"
+                                                      "You need to select the *parent* folder inside which the new modules will be created.");
+                    return;
+                }
+
+                for (int i = 0; i < mods.size(); ++i)
+                    mods.getReference(i).manifestFile = lastLocation.getChildFile (mods.getReference(i).getID())
+                                                                    .getChildFile (ModuleDescription::getManifestFileName());
+
+                updateModulesFromWeb (project, mods);
+            }
+        }
+
+        void run() override
+        {
+            for (int i = 0; i < modules.size(); ++i)
+            {
+                const ModuleDescription& m = modules.getReference(i);
+
+                setProgress (i / (double) modules.size());
+
+                MemoryBlock downloaded;
+                result = download (m, downloaded);
+
+                if (result.failed() || threadShouldExit())
+                    break;
+
+                result = unzip (m, downloaded);
+
+                if (result.failed() || threadShouldExit())
+                    break;
+            }
+        }
+
+        Result download (const ModuleDescription& m, MemoryBlock& dest)
+        {
+            setStatusMessage ("Downloading " + m.getID() + "...");
+
+            const ScopedPointer<InputStream> in (m.url.createInputStream (false, nullptr, nullptr, String::empty, 10000));
+
+            if (in != nullptr && in->readIntoMemoryBlock (dest))
+                return Result::ok();
+
+            return Result::fail ("Failed to download from: " + m.url.toString (false));
+        }
+
+        Result unzip (const ModuleDescription& m, const MemoryBlock& data)
+        {
+            setStatusMessage ("Installing " + m.getID() + "...");
+
+            MemoryInputStream input (data, false);
+            ZipFile zip (input);
+
+            if (zip.getNumEntries() == 0)
+                return Result::fail ("The downloaded file wasn't a valid module file!");
+
+            if (! m.getFolder().deleteRecursively())
+                return Result::fail ("Couldn't delete the existing folder:\n" + m.getFolder().getFullPathName());
+
+            return zip.uncompressTo (m.getFolder().getParentDirectory(), true);
+        }
+
+        Result result;
+        Array<ModuleDescription> modules;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DownloadAndInstallThread)
+    };
+
     ScopedPointer<WebsiteUpdateFetchThread> webUpdateThread;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ModulesPanel)
-};
-
-//==============================================================================
-class DownloadAndInstallThread   : public ThreadWithProgressWindow
-{
-public:
-    DownloadAndInstallThread (const Array<ModuleDescription>& modulesToInstall)
-        : ThreadWithProgressWindow ("Installing New Modules", true, true),
-          result (Result::ok()),
-          modules (modulesToInstall)
-    {
-    }
-
-    static void updateModulesFromWeb (Project& project, const Array<ModuleDescription>& mods)
-    {
-        DownloadAndInstallThread d (mods);
-
-        if (d.runThread())
-        {
-            if (d.result.failed())
-            {
-                AlertWindow::showMessageBoxAsync (AlertWindow::WarningIcon,
-                                                  "Module Install Failed",
-                                                  d.result.getErrorMessage());
-            }
-            else
-            {
-                for (int i = 0; i < d.modules.size(); ++i)
-                    project.getModules().addModule (d.modules.getReference(i).manifestFile,
-                                                    project.getModules().areMostModulesCopiedLocally());
-            }
-        }
-    }
-
-    static void addModuleFromWebsite (Project& project, const ModuleDescription& module)
-    {
-        Array<ModuleDescription> mods;
-        mods.add (module);
-
-        static File lastLocation (EnabledModuleList::findDefaultModulesFolder (project));
-
-        FileChooser fc ("Select the parent folder for the new module...", lastLocation, String::empty, false);
-
-        if (fc.browseForDirectory())
-        {
-            lastLocation = fc.getResult();
-
-            if (lastLocation.getChildFile (ModuleDescription::getManifestFileName()).exists())
-            {
-                AlertWindow::showMessageBoxAsync (AlertWindow::WarningIcon,
-                                                  "Adding Module",
-                                                  "You chose a folder that appears to be a module.\n\n"
-                                                  "You need to select the *parent* folder inside which the new modules will be created.");
-                return;
-            }
-
-            for (int i = 0; i < mods.size(); ++i)
-                mods.getReference(i).manifestFile = lastLocation.getChildFile (mods.getReference(i).getID())
-                                                                .getChildFile (ModuleDescription::getManifestFileName());
-
-            updateModulesFromWeb (project, mods);
-        }
-    }
-
-    void run() override
-    {
-        for (int i = 0; i < modules.size(); ++i)
-        {
-            const ModuleDescription& m = modules.getReference(i);
-
-            setProgress (i / (double) modules.size());
-
-            MemoryBlock downloaded;
-            result = download (m, downloaded);
-
-            if (result.failed() || threadShouldExit())
-                break;
-
-            result = unzip (m, downloaded);
-
-            if (result.failed() || threadShouldExit())
-                break;
-        }
-    }
-
-    Result download (const ModuleDescription& m, MemoryBlock& dest)
-    {
-        setStatusMessage ("Downloading " + m.getID() + "...");
-
-        const ScopedPointer<InputStream> in (m.url.createInputStream (false, nullptr, nullptr, String::empty, 10000));
-
-        if (in != nullptr && in->readIntoMemoryBlock (dest))
-            return Result::ok();
-
-        return Result::fail ("Failed to download from: " + m.url.toString (false));
-    }
-
-    Result unzip (const ModuleDescription& m, const MemoryBlock& data)
-    {
-        setStatusMessage ("Installing " + m.getID() + "...");
-
-        MemoryInputStream input (data, false);
-        ZipFile zip (input);
-
-        if (zip.getNumEntries() == 0)
-            return Result::fail ("The downloaded file wasn't a valid module file!");
-
-        if (! m.getFolder().deleteRecursively())
-            return Result::fail ("Couldn't delete the existing folder:\n" + m.getFolder().getFullPathName());
-
-        return zip.uncompressTo (m.getFolder().getParentDirectory(), true);
-    }
-
-    Result result;
-    Array<ModuleDescription> modules;
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DownloadAndInstallThread)
 };

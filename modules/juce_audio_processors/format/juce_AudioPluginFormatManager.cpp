@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -36,6 +36,10 @@ void AudioPluginFormatManager::addDefaultFormats()
         jassert (dynamic_cast <VSTPluginFormat*> (formats[i]) == nullptr);
        #endif
 
+       #if JUCE_PLUGINHOST_VST3
+        jassert (dynamic_cast <VST3PluginFormat*> (formats[i]) == nullptr);
+       #endif
+
        #if JUCE_PLUGINHOST_AU && JUCE_MAC
         jassert (dynamic_cast <AudioUnitPluginFormat*> (formats[i]) == nullptr);
        #endif
@@ -52,6 +56,10 @@ void AudioPluginFormatManager::addDefaultFormats()
 
    #if JUCE_PLUGINHOST_VST
     formats.add (new VSTPluginFormat());
+   #endif
+
+   #if JUCE_PLUGINHOST_VST3
+    formats.add (new VST3PluginFormat());
    #endif
 
    #if JUCE_PLUGINHOST_LADSPA && JUCE_LINUX

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -73,6 +73,7 @@ namespace juce
 #include "timers/juce_Timer.cpp"
 #include "interprocess/juce_InterprocessConnection.cpp"
 #include "interprocess/juce_InterprocessConnectionServer.cpp"
+#include "interprocess/juce_ConnectedChildProcess.cpp"
 
 //==============================================================================
 #if JUCE_MAC

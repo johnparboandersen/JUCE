@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the juce_core module of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission to use, copy, modify, and/or distribute this software for any purpose with
    or without fee is hereby granted, provided that the above copyright notice and this
@@ -210,7 +210,7 @@ XmlElement* XmlDocument::parseDocumentElement (String::CharPointerType textToPar
     }
     else
     {
-        lastError = String::empty;
+        lastError.clear();
 
         ScopedPointer<XmlElement> result (readNextElement (! onlyReadOuterDocumentElement));
 
@@ -371,8 +371,8 @@ void XmlDocument::readQuotedString (String& result)
                 }
                 else if (character == 0)
                 {
-                    outOfData = true;
                     setLastError ("unmatched quotes", false);
+                    outOfData = true;
                     break;
                 }
 
@@ -408,7 +408,7 @@ XmlElement* XmlDocument::readNextElement (const bool alsoParseSubElements)
             }
         }
 
-        node = new XmlElement (String (input, endOfToken));
+        node = new XmlElement (input, endOfToken);
         input = endOfToken;
         LinkedListPointer<XmlElement::XmlAttributeNode>::Appender attributeAppender (node->attributes);
 
@@ -432,7 +432,7 @@ XmlElement* XmlDocument::readNextElement (const bool alsoParseSubElements)
                 ++input;
 
                 if (alsoParseSubElements)
-                    readChildElements (node);
+                    readChildElements (*node);
 
                 break;
             }
@@ -458,8 +458,7 @@ XmlElement* XmlDocument::readNextElement (const bool alsoParseSubElements)
                         if (nextChar == '"' || nextChar == '\'')
                         {
                             XmlElement::XmlAttributeNode* const newAtt
-                                = new XmlElement::XmlAttributeNode (String (attNameStart, attNameEnd),
-                                                                    String::empty);
+                                = new XmlElement::XmlAttributeNode (attNameStart, attNameEnd);
 
                             readQuotedString (newAtt->value);
                             attributeAppender.append (newAtt);
@@ -487,9 +486,9 @@ XmlElement* XmlDocument::readNextElement (const bool alsoParseSubElements)
     return node;
 }
 
-void XmlDocument::readChildElements (XmlElement* parent)
+void XmlDocument::readChildElements (XmlElement& parent)
 {
-    LinkedListPointer<XmlElement>::Appender childAppender (parent->firstChildElement);
+    LinkedListPointer<XmlElement>::Appender childAppender (parent.firstChildElement);
 
     for (;;)
     {
@@ -556,14 +555,33 @@ void XmlDocument::readChildElements (XmlElement* parent)
         else  // must be a character block
         {
             input = preWhitespaceInput; // roll back to include the leading whitespace
-            String textElementContent;
+            MemoryOutputStream textElementContent;
+            bool contentShouldBeUsed = ! ignoreEmptyTextElements;
 
             for (;;)
             {
                 const juce_wchar c = *input;
 
                 if (c == '<')
+                {
+                    if (input[1] == '!' && input[2] == '-' && input[3] == '-')
+                    {
+                        input += 4;
+                        const int closeComment = input.indexOf (CharPointer_ASCII ("-->"));
+
+                        if (closeComment < 0)
+                        {
+                            setLastError ("unterminated comment", false);
+                            outOfData = true;
+                            return;
+                        }
+
+                        input += closeComment + 3;
+                        continue;
+                    }
+
                     break;
+                }
 
                 if (c == 0)
                 {
@@ -585,28 +603,20 @@ void XmlDocument::readChildElements (XmlElement* parent)
                         input = entity.getCharPointer();
                         outOfData = false;
 
-                        for (;;)
-                        {
-                            XmlElement* const n = readNextElement (true);
-
-                            if (n == nullptr)
-                                break;
-
+                        while (XmlElement* n = readNextElement (true))
                             childAppender.append (n);
-                        }
 
                         input = oldInput;
                         outOfData = oldOutOfData;
                     }
                     else
                     {
-                        textElementContent += entity;
+                        textElementContent << entity;
+                        contentShouldBeUsed = contentShouldBeUsed || entity.containsNonWhitespaceChars();
                     }
                 }
                 else
                 {
-                    const String::CharPointerType start (input);
-
                     for (;;)
                     {
                         const juce_wchar nextChar = *input;
@@ -621,15 +631,15 @@ void XmlDocument::readChildElements (XmlElement* parent)
                             return;
                         }
 
+                        textElementContent.appendUTF8Char (nextChar);
+                        contentShouldBeUsed = contentShouldBeUsed || ! CharacterFunctions::isWhitespace (nextChar);
                         ++input;
                     }
-
-                    textElementContent.appendCharPointer (start, input);
                 }
             }
 
-            if ((! ignoreEmptyTextElements) || textElementContent.containsNonWhitespaceChars())
-                childAppender.append (XmlElement::createTextElement (textElementContent));
+            if (contentShouldBeUsed)
+                childAppender.append (XmlElement::createTextElement (textElementContent.toUTF8()));
         }
     }
 }

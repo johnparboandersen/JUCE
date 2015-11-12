@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,12 +22,14 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_PROJECTEXPORTER_JUCEHEADER__
-#define __JUCER_PROJECTEXPORTER_JUCEHEADER__
+#ifndef JUCER_PROJECTEXPORTER_H_INCLUDED
+#define JUCER_PROJECTEXPORTER_H_INCLUDED
 
 #include "../jucer_Headers.h"
 #include "../Project/jucer_Project.h"
 #include "../Project/jucer_ProjectType.h"
+#include "../Application/jucer_GlobalPreferences.h"
+
 class ProjectSaver;
 
 //==============================================================================
@@ -37,7 +39,17 @@ public:
     ProjectExporter (Project&, const ValueTree& settings);
     virtual ~ProjectExporter();
 
+    struct ExporterTypeInfo
+    {
+        String name;
+        const void* iconData;
+        int iconDataSize;
+
+        Image getIcon() const   { return ImageCache::getFromMemory (iconData, iconDataSize); }
+    };
+
     static StringArray getExporterNames();
+    static Array<ExporterTypeInfo> getExporterTypes();
 
     static ProjectExporter* createNewExporter (Project&, const int index);
     static ProjectExporter* createNewExporter (Project&, const String& name);
@@ -54,15 +66,32 @@ public:
     virtual void create (const OwnedArray<LibraryModule>&) const = 0; // may throw a SaveError
     virtual bool shouldFileBeCompiledByDefault (const RelativePath& path) const;
     virtual bool canCopeWithDuplicateFiles() = 0;
+    virtual bool supportsUserDefinedConfigurations() const   { return true; }
 
     virtual bool isXcode() const                { return false; }
     virtual bool isVisualStudio() const         { return false; }
-    virtual bool isWindows() const              { return false; }
     virtual int getVisualStudioVersion() const  { return 0; }
+    virtual bool isCodeBlocksWindows() const    { return false; }
+    virtual bool isCodeBlocksLinux() const      { return false; }
+    virtual bool isLinuxMakefile() const        { return false; }
+
+    virtual bool isAndroid() const              { return false; }
+    virtual bool isWindows() const              { return false; }
     virtual bool isLinux() const                { return false; }
     virtual bool isOSX() const                  { return false; }
-    virtual bool isAndroid() const              { return false; }
-    virtual bool isCodeBlocks() const           { return false; }
+
+    bool mayCompileOnCurrentOS() const
+    {
+       #if JUCE_MAC
+        return isOSX() || isAndroid();
+       #elif JUCE_WINDOWS
+        return isWindows() || isAndroid();
+       #elif JUCE_LINUX
+        return isLinux() || isAndroid();
+       #else
+        #error
+       #endif
+    }
 
     //==============================================================================
     String getName() const                      { return name; }
@@ -84,10 +113,16 @@ public:
     String getExtraLinkerFlagsString() const    { return getSettingString (Ids::extraLinkerFlags).replaceCharacters ("\r\n", "  "); }
 
     Value getExternalLibraries()                { return getSetting (Ids::externalLibraries); }
-    String getExternalLibrariesString() const   { return getSettingString (Ids::externalLibraries).replaceCharacters ("\r\n", " ;"); }
+    String getExternalLibrariesString() const   { return getSearchPathsFromString (getSettingString (Ids::externalLibraries)).joinIntoString (";"); }
 
     Value getUserNotes()                        { return getSetting (Ids::userNotes); }
 
+    Value getVSTPathValue (bool isVST3) const   { return isVST3 ? vst3Path : vst2Path; }
+    Value getRTASPathValue() const              { return rtasPath; }
+    Value getAAXPathValue() const               { return aaxPath; }
+
+    // NB: this is the path to the parent "modules" folder that contains the named module, not the
+    // module folder itself.
     Value getPathForModuleValue (const String& moduleID);
     String getPathForModuleString (const String& moduleID) const;
     void removePathForModule (const String& moduleID);
@@ -96,7 +131,7 @@ public:
     String getLegacyModulePath() const;
 
     // Returns a path to the actual module folder itself
-    RelativePath getModuleFolderRelativeToProject (const String& moduleID, ProjectSaver& projectSaver) const;
+    RelativePath getModuleFolderRelativeToProject (const String& moduleID) const;
     void updateOldModulePaths();
 
     RelativePath rebaseFromProjectFolderToBuildTarget (const RelativePath& path) const;
@@ -104,8 +139,8 @@ public:
 
     Value getBigIconImageItemID()               { return getSetting (Ids::bigIcon); }
     Value getSmallIconImageItemID()             { return getSetting (Ids::smallIcon); }
-    Image getBigIcon() const;
-    Image getSmallIcon() const;
+    Drawable* getBigIcon() const;
+    Drawable* getSmallIcon() const;
     Image getBestIconForSize (int size, bool returnNullIfNothingBigEnough) const;
 
     String getExporterIdentifierMacro() const
@@ -141,14 +176,14 @@ public:
     String xcodeProductType, xcodeProductInstallPath, xcodeFileType;
     String xcodeOtherRezFlags, xcodeExcludedFiles64Bit;
     bool xcodeIsBundle, xcodeCreatePList, xcodeCanUseDwarf;
-    StringArray xcodeFrameworks;
+    StringArray xcodeFrameworks, xcodeLibs;
     Array<RelativePath> xcodeExtraLibrariesDebug, xcodeExtraLibrariesRelease;
     Array<XmlElement> xcodeExtraPListEntries;
 
     //==============================================================================
     String makefileTargetSuffix;
     bool makefileIsDLL;
-    StringArray linuxLibs;
+    StringArray linuxLibs, makefileExtraLinkerFlags;
 
     //==============================================================================
     String msvcTargetSuffix;
@@ -164,13 +199,14 @@ public:
     class BuildConfiguration  : public ReferenceCountedObject
     {
     public:
-        BuildConfiguration (Project& project, const ValueTree& configNode);
+        BuildConfiguration (Project& project, const ValueTree& configNode, const ProjectExporter&);
         ~BuildConfiguration();
 
         typedef ReferenceCountedObjectPtr<BuildConfiguration> Ptr;
 
         //==============================================================================
         virtual void createConfigProperties (PropertyListBuilder&) = 0;
+        virtual var getDefaultOptimisationLevel() const = 0;
 
         //==============================================================================
         Value getNameValue()                                { return getValue (Ids::name); }
@@ -209,13 +245,13 @@ public:
         UndoManager* getUndoManager() const                 { return project.getUndoManagerFor (config); }
 
         void createPropertyEditors (PropertyListBuilder&);
+        void addGCCOptimisationProperty (PropertyListBuilder&);
         void removeFromExporter();
 
         //==============================================================================
         ValueTree config;
         Project& project;
-
-    protected:
+        const ProjectExporter& exporter;
 
     private:
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BuildConfiguration)
@@ -282,12 +318,14 @@ public:
 
     ValueTree settings;
 
-    //==============================================================================
-    enum OptimisationLevel
+    enum GCCOptimisationLevel
     {
-        optimisationOff = 1,
-        optimiseMinSize = 2,
-        optimiseMaxSpeed = 3
+        gccO0     = 1,
+        gccO1     = 4,
+        gccO2     = 5,
+        gccO3     = 3,
+        gccOs     = 2,
+        gccOfast  = 6
     };
 
 protected:
@@ -297,6 +335,7 @@ protected:
     const ProjectType& projectType;
     const String projectName;
     const File projectFolder;
+    Value vst2Path, vst3Path, rtasPath, aaxPath; // these must be initialised in the specific exporter c'tors!
 
     mutable Array<Project::Item> itemGroups;
     void initItemGroups() const;
@@ -304,19 +343,25 @@ protected:
 
     virtual BuildConfiguration::Ptr createBuildConfig (const ValueTree&) const = 0;
 
+    void addDefaultPreprocessorDefs (StringPairArray&) const;
+
     static String getDefaultBuildsRootFolder()            { return "Builds/"; }
 
     static String getLibbedFilename (String name)
     {
-        if (! name.startsWith ("lib"))
-            name = "lib" + name;
-        if (! name.endsWithIgnoreCase (".a"))
-            name = name + ".a";
+        if (! name.startsWith ("lib"))         name = "lib" + name;
+        if (! name.endsWithIgnoreCase (".a"))  name += ".a";
         return name;
     }
 
     //==============================================================================
     static void overwriteFileIfDifferentOrThrow (const File& file, const MemoryOutputStream& newData)
+    {
+        if (! FileHelpers::overwriteFileWithNewDataIfDifferent (file, newData))
+            throw SaveError (file);
+    }
+
+    static void overwriteFileIfDifferentOrThrow (const File& file, const String& newData)
     {
         if (! FileHelpers::overwriteFileWithNewDataIfDifferent (file, newData))
             throw SaveError (file);
@@ -345,11 +390,11 @@ protected:
         }
     }
 
-    static Image rescaleImageForIcon (Image image, int iconSize);
+    static Image rescaleImageForIcon (Drawable&, int iconSize);
 
 private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ProjectExporter)
 };
 
 
-#endif   // __JUCER_PROJECTEXPORTER_JUCEHEADER__
+#endif   // JUCER_PROJECTEXPORTER_H_INCLUDED

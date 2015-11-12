@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -42,17 +42,13 @@ public:
 
     XmlElement* createXmlFor (Component* comp, const ComponentLayout* layout)
     {
-        TabbedComponent* const t = dynamic_cast <TabbedComponent*> (comp);
+        TabbedComponent* const t = dynamic_cast<TabbedComponent*> (comp);
         XmlElement* const e = ComponentTypeHandler::createXmlFor (comp, layout);
 
-        if (t->getOrientation() == TabbedButtonBar::TabsAtTop)
-            e->setAttribute ("orientation", "top");
-        else if (t->getOrientation() == TabbedButtonBar::TabsAtBottom)
-            e->setAttribute ("orientation", "bottom");
-        else if (t->getOrientation() == TabbedButtonBar::TabsAtLeft)
-            e->setAttribute ("orientation", "left");
-        else if (t->getOrientation() == TabbedButtonBar::TabsAtRight)
-            e->setAttribute ("orientation", "right");
+        if (t->getOrientation() == TabbedButtonBar::TabsAtTop)           e->setAttribute ("orientation", "top");
+        else if (t->getOrientation() == TabbedButtonBar::TabsAtBottom)   e->setAttribute ("orientation", "bottom");
+        else if (t->getOrientation() == TabbedButtonBar::TabsAtLeft)     e->setAttribute ("orientation", "left");
+        else if (t->getOrientation() == TabbedButtonBar::TabsAtRight)    e->setAttribute ("orientation", "right");
 
         e->setAttribute ("tabBarDepth", t->getTabBarDepth());
         e->setAttribute ("initialTab", t->getCurrentTabIndex());
@@ -68,16 +64,12 @@ public:
         if (! ComponentTypeHandler::restoreFromXml (xml, comp, layout))
             return false;
 
-        TabbedComponent* const t = dynamic_cast <TabbedComponent*> (comp);
+        TabbedComponent* const t = dynamic_cast<TabbedComponent*> (comp);
 
-        if (xml.getStringAttribute ("orientation") == "top")
-            t->setOrientation (TabbedButtonBar::TabsAtTop);
-        else if (xml.getStringAttribute ("orientation") == "bottom")
-            t->setOrientation (TabbedButtonBar::TabsAtBottom);
-        else if (xml.getStringAttribute ("orientation") == "left")
-            t->setOrientation (TabbedButtonBar::TabsAtLeft);
-        else if (xml.getStringAttribute ("orientation") == "right")
-            t->setOrientation (TabbedButtonBar::TabsAtRight);
+        if (xml.getStringAttribute ("orientation") == "top")          t->setOrientation (TabbedButtonBar::TabsAtTop);
+        else if (xml.getStringAttribute ("orientation") == "bottom")  t->setOrientation (TabbedButtonBar::TabsAtBottom);
+        else if (xml.getStringAttribute ("orientation") == "left")    t->setOrientation (TabbedButtonBar::TabsAtLeft);
+        else if (xml.getStringAttribute ("orientation") == "right")   t->setOrientation (TabbedButtonBar::TabsAtRight);
 
         TabbedComponent defaultTabComp (TabbedButtonBar::TabsAtTop);
 
@@ -96,57 +88,55 @@ public:
         return true;
     }
 
-    void getEditableProperties (Component* component, JucerDocument& document, Array <PropertyComponent*>& properties)
+    void getEditableProperties (Component* component, JucerDocument& doc, Array<PropertyComponent*>& props)
     {
-        ComponentTypeHandler::getEditableProperties (component, document, properties);
+        ComponentTypeHandler::getEditableProperties (component, doc, props);
 
-        TabbedComponent* const t = dynamic_cast <TabbedComponent*> (component);
+        TabbedComponent* const t = dynamic_cast<TabbedComponent*> (component);
 
-        properties.add (new TabOrientationProperty (t, document));
-        properties.add (new TabDepthProperty (t, document));
-
-        if (t->getNumTabs() > 0)
-            properties.add (new TabInitialTabProperty (t, document));
-
-        properties.add (new TabAddTabProperty (t, document));
+        props.add (new TabOrientationProperty (t, doc));
+        props.add (new TabDepthProperty (t, doc));
 
         if (t->getNumTabs() > 0)
-            properties.add (new TabRemoveTabProperty (t, document));
+            props.add (new TabInitialTabProperty (t, doc));
+
+        props.add (new TabAddTabProperty (t, doc));
+
+        if (t->getNumTabs() > 0)
+            props.add (new TabRemoveTabProperty (t, doc));
     }
 
-    void addPropertiesToPropertyPanel (Component* comp,
-                                       JucerDocument& document,
-                                       PropertyPanel& panel)
+    void addPropertiesToPropertyPanel (Component* comp, JucerDocument& doc, PropertyPanel& panel)
     {
-        ComponentTypeHandler::addPropertiesToPropertyPanel (comp, document, panel);
+        ComponentTypeHandler::addPropertiesToPropertyPanel (comp, doc, panel);
 
-        TabbedComponent* const t = dynamic_cast <TabbedComponent*> (comp);
+        TabbedComponent* const t = dynamic_cast<TabbedComponent*> (comp);
 
         for (int i = 0; i < t->getNumTabs(); ++i)
         {
-            Array <PropertyComponent*> properties;
+            Array<PropertyComponent*> properties;
 
-            properties.add (new TabNameProperty (t, document, i));
-            properties.add (new TabColourProperty (t, document, i));
+            properties.add (new TabNameProperty (t, doc, i));
+            properties.add (new TabColourProperty (t, doc, i));
 
-            properties.add (new TabContentTypeProperty (t, document, i));
+            properties.add (new TabContentTypeProperty (t, doc, i));
 
             if (isTabUsingJucerComp (t, i))
-                properties.add (new TabJucerFileProperty (t, document, i));
+                properties.add (new TabJucerFileProperty (t, doc, i));
             else
-                properties.add (new TabContentClassProperty (t, document, i));
+                properties.add (new TabContentClassProperty (t, doc, i));
 
-            properties.add (new TabContentConstructorParamsProperty (t, document, i));
+            properties.add (new TabContentConstructorParamsProperty (t, doc, i));
 
-            properties.add (new TabMoveProperty (t, document, i, t->getNumTabs()));
+            properties.add (new TabMoveProperty (t, doc, i, t->getNumTabs()));
 
             panel.addSection ("Tab " + String (i), properties);
         }
     }
 
-    String getCreationParameters (Component* comp)
+    String getCreationParameters (GeneratedCode&, Component* comp)
     {
-        TabbedComponent* const t = dynamic_cast <TabbedComponent*> (comp);
+        TabbedComponent* const t = dynamic_cast<TabbedComponent*> (comp);
 
         switch (t->getOrientation())
         {
@@ -162,7 +152,7 @@ public:
 
     void fillInCreationCode (GeneratedCode& code, Component* component, const String& memberVariableName)
     {
-        TabbedComponent* const t = dynamic_cast <TabbedComponent*> (component);
+        TabbedComponent* const t = dynamic_cast<TabbedComponent*> (component);
 
         ComponentTypeHandler::fillInCreationCode (code, component, memberVariableName);
 
@@ -194,7 +184,7 @@ public:
             code.constructorCode
                 << memberVariableName
                 << "->addTab ("
-                << quotedString (t->getTabNames() [i])
+                << quotedString (t->getTabNames() [i], code.shouldUseTransMacro())
                 << ", "
                 << CodeHelpers::colourToCode (t->getTabBackgroundColour (i));
 
@@ -233,7 +223,7 @@ public:
         xml->setAttribute ("name", tc->getTabNames() [tabIndex]);
         xml->setAttribute ("colour", tc->getTabBackgroundColour (tabIndex).toString());
 
-        if (TabDemoContentComp* const tdc = dynamic_cast <TabDemoContentComp*> (tc->getTabContentComponent (tabIndex)))
+        if (TabDemoContentComp* const tdc = dynamic_cast<TabDemoContentComp*> (tc->getTabContentComponent (tabIndex)))
         {
             xml->setAttribute ("useJucerComp", tdc->isUsingJucerComp);
             xml->setAttribute ("contentClassName", tdc->contentClassName);
@@ -249,11 +239,11 @@ public:
         tc->setTabName (tabIndex, xml.getStringAttribute ("name", "Tab"));
         tc->setTabBackgroundColour (tabIndex, Colour::fromString (xml.getStringAttribute ("colour", Colours::lightgrey.toString())));
 
-        if (TabDemoContentComp* const tdc = dynamic_cast <TabDemoContentComp*> (tc->getTabContentComponent (tabIndex)))
+        if (TabDemoContentComp* const tdc = dynamic_cast<TabDemoContentComp*> (tc->getTabContentComponent (tabIndex)))
         {
-            tdc->isUsingJucerComp = xml.getBoolAttribute ("useJucerComp", false);
-            tdc->contentClassName = xml.getStringAttribute ("contentClassName");
-            tdc->constructorParams = xml.getStringAttribute ("constructorParams");
+            tdc->isUsingJucerComp   = xml.getBoolAttribute ("useJucerComp", false);
+            tdc->contentClassName   = xml.getStringAttribute ("contentClassName");
+            tdc->constructorParams  = xml.getStringAttribute ("constructorParams");
             tdc->jucerComponentFile = xml.getStringAttribute ("jucerComponentFile");
 
             tdc->updateContent();
@@ -263,7 +253,7 @@ public:
     //==============================================================================
     static bool isTabUsingJucerComp (TabbedComponent* tc, int tabIndex)
     {
-        TabDemoContentComp* const tdc = dynamic_cast <TabDemoContentComp*> (tc->getTabContentComponent (tabIndex));
+        TabDemoContentComp* const tdc = dynamic_cast<TabDemoContentComp*> (tc->getTabContentComponent (tabIndex));
         jassert (tdc != nullptr);
 
         return tdc != 0 && tdc->isUsingJucerComp;
@@ -271,7 +261,7 @@ public:
 
     static void setTabUsingJucerComp (TabbedComponent* tc, int tabIndex, const bool b)
     {
-        TabDemoContentComp* const tdc = dynamic_cast <TabDemoContentComp*> (tc->getTabContentComponent (tabIndex));
+        TabDemoContentComp* const tdc = dynamic_cast<TabDemoContentComp*> (tc->getTabContentComponent (tabIndex));
         jassert (tdc != nullptr);
 
         if (tdc != nullptr)
@@ -283,7 +273,7 @@ public:
 
     static String getTabClassName (TabbedComponent* tc, int tabIndex)
     {
-        TabDemoContentComp* const tdc = dynamic_cast <TabDemoContentComp*> (tc->getTabContentComponent (tabIndex));
+        TabDemoContentComp* const tdc = dynamic_cast<TabDemoContentComp*> (tc->getTabContentComponent (tabIndex));
         jassert (tdc != nullptr);
 
         return tdc != 0 ? tdc->contentClassName : String::empty;
@@ -291,7 +281,7 @@ public:
 
     static void setTabClassName (TabbedComponent* tc, int tabIndex, const String& newName)
     {
-        TabDemoContentComp* const tdc = dynamic_cast <TabDemoContentComp*> (tc->getTabContentComponent (tabIndex));
+        TabDemoContentComp* const tdc = dynamic_cast<TabDemoContentComp*> (tc->getTabContentComponent (tabIndex));
         jassert (tdc != nullptr);
 
         if (tdc != nullptr)
@@ -303,7 +293,7 @@ public:
 
     static String getTabConstructorParams (TabbedComponent* tc, int tabIndex)
     {
-        TabDemoContentComp* const tdc = dynamic_cast <TabDemoContentComp*> (tc->getTabContentComponent (tabIndex));
+        TabDemoContentComp* const tdc = dynamic_cast<TabDemoContentComp*> (tc->getTabContentComponent (tabIndex));
         jassert (tdc != nullptr);
 
         return tdc != 0 ? tdc->constructorParams : String::empty;
@@ -311,7 +301,7 @@ public:
 
     static void setTabConstructorParams (TabbedComponent* tc, int tabIndex, const String& newParams)
     {
-        TabDemoContentComp* const tdc = dynamic_cast <TabDemoContentComp*> (tc->getTabContentComponent (tabIndex));
+        TabDemoContentComp* const tdc = dynamic_cast<TabDemoContentComp*> (tc->getTabContentComponent (tabIndex));
         jassert (tdc != nullptr);
 
         if (tdc != nullptr)
@@ -323,7 +313,7 @@ public:
 
     static String getTabJucerFile (TabbedComponent* tc, int tabIndex)
     {
-        TabDemoContentComp* const tdc = dynamic_cast <TabDemoContentComp*> (tc->getTabContentComponent (tabIndex));
+        TabDemoContentComp* const tdc = dynamic_cast<TabDemoContentComp*> (tc->getTabContentComponent (tabIndex));
         jassert (tdc != nullptr);
 
         return tdc != 0 ? tdc->jucerComponentFile : String::empty;
@@ -331,7 +321,7 @@ public:
 
     static void setTabJucerFile (TabbedComponent* tc, int tabIndex, const String& newFile)
     {
-        TabDemoContentComp* const tdc = dynamic_cast <TabDemoContentComp*> (tc->getTabContentComponent (tabIndex));
+        TabDemoContentComp* const tdc = dynamic_cast<TabDemoContentComp*> (tc->getTabContentComponent (tabIndex));
         jassert (tdc != nullptr);
 
         if (tdc != nullptr)
@@ -406,11 +396,11 @@ private:
     };
 
     //==============================================================================
-    class TabOrientationProperty  : public ComponentChoiceProperty <TabbedComponent>
+    class TabOrientationProperty  : public ComponentChoiceProperty<TabbedComponent>
     {
     public:
-        TabOrientationProperty (TabbedComponent* comp, JucerDocument& document)
-            : ComponentChoiceProperty <TabbedComponent> ("tab position", comp, document)
+        TabOrientationProperty (TabbedComponent* comp, JucerDocument& doc)
+            : ComponentChoiceProperty<TabbedComponent> ("tab position", comp, doc)
         {
             choices.add ("Tabs at top");
             choices.add ("Tabs at bottom");
@@ -444,11 +434,11 @@ private:
         }
 
     private:
-        class TabOrienationChangeAction  : public ComponentUndoableAction <TabbedComponent>
+        class TabOrienationChangeAction  : public ComponentUndoableAction<TabbedComponent>
         {
         public:
-            TabOrienationChangeAction (TabbedComponent* const comp, ComponentLayout& layout, const TabbedButtonBar::Orientation newState_)
-                : ComponentUndoableAction <TabbedComponent> (comp, layout),
+            TabOrienationChangeAction (TabbedComponent* const comp, ComponentLayout& l, const TabbedButtonBar::Orientation newState_)
+                : ComponentUndoableAction<TabbedComponent> (comp, l),
                   newState (newState_)
             {
                 oldState = comp->getOrientation();
@@ -475,11 +465,11 @@ private:
     };
 
     //==============================================================================
-    class TabInitialTabProperty  : public ComponentChoiceProperty <TabbedComponent>
+    class TabInitialTabProperty  : public ComponentChoiceProperty<TabbedComponent>
     {
     public:
-        TabInitialTabProperty (TabbedComponent* comp, JucerDocument& document)
-            : ComponentChoiceProperty <TabbedComponent> ("initial tab", comp, document)
+        TabInitialTabProperty (TabbedComponent* comp, JucerDocument& doc)
+            : ComponentChoiceProperty<TabbedComponent> ("initial tab", comp, doc)
         {
             for (int i = 0; i < comp->getNumTabs(); ++i)
                 choices.add ("Tab " + String (i) + ": \"" + comp->getTabNames() [i] + "\"");
@@ -497,11 +487,11 @@ private:
         }
 
     private:
-        class InitialTabChangeAction  : public ComponentUndoableAction <TabbedComponent>
+        class InitialTabChangeAction  : public ComponentUndoableAction<TabbedComponent>
         {
         public:
-            InitialTabChangeAction (TabbedComponent* const comp, ComponentLayout& layout, const int newValue_)
-                : ComponentUndoableAction <TabbedComponent> (comp, layout),
+            InitialTabChangeAction (TabbedComponent* const comp, ComponentLayout& l, const int newValue_)
+                : ComponentUndoableAction<TabbedComponent> (comp, l),
                   newValue (newValue_)
             {
                 oldValue = comp->getCurrentTabIndex();
@@ -568,11 +558,11 @@ private:
         JucerDocument& document;
 
     private:
-        class TabDepthChangeAction  : public ComponentUndoableAction <TabbedComponent>
+        class TabDepthChangeAction  : public ComponentUndoableAction<TabbedComponent>
         {
         public:
-            TabDepthChangeAction (TabbedComponent* const comp, ComponentLayout& layout, const int newState_)
-                : ComponentUndoableAction <TabbedComponent> (comp, layout),
+            TabDepthChangeAction (TabbedComponent* const comp, ComponentLayout& l, const int newState_)
+                : ComponentUndoableAction<TabbedComponent> (comp, l),
                   newState (newState_)
             {
                 oldState = comp->getTabBarDepth();
@@ -624,11 +614,11 @@ private:
         JucerDocument& document;
 
     private:
-        class AddTabAction  : public ComponentUndoableAction <TabbedComponent>
+        class AddTabAction  : public ComponentUndoableAction<TabbedComponent>
         {
         public:
-            AddTabAction (TabbedComponent* const comp, ComponentLayout& layout)
-                : ComponentUndoableAction <TabbedComponent> (comp, layout)
+            AddTabAction (TabbedComponent* const comp, ComponentLayout& l)
+                : ComponentUndoableAction<TabbedComponent> (comp, l)
             {
             }
 
@@ -690,11 +680,11 @@ private:
         JucerDocument& document;
 
     private:
-        class RemoveTabAction  : public ComponentUndoableAction <TabbedComponent>
+        class RemoveTabAction  : public ComponentUndoableAction<TabbedComponent>
         {
         public:
-            RemoveTabAction (TabbedComponent* const comp, ComponentLayout& layout, int indexToRemove_)
-                : ComponentUndoableAction <TabbedComponent> (comp, layout),
+            RemoveTabAction (TabbedComponent* const comp, ComponentLayout& l, int indexToRemove_)
+                : ComponentUndoableAction<TabbedComponent> (comp, l),
                   indexToRemove (indexToRemove_)
             {
                 previousState = getTabState (comp, indexToRemove);
@@ -727,22 +717,22 @@ private:
     };
 
     //==============================================================================
-    class TabNameProperty  : public ComponentTextProperty <TabbedComponent>
+    class TabNameProperty  : public ComponentTextProperty<TabbedComponent>
     {
     public:
-        TabNameProperty (TabbedComponent* comp, JucerDocument& document, const int tabIndex_)
-            : ComponentTextProperty <TabbedComponent> ("name", 200, false, comp, document),
+        TabNameProperty (TabbedComponent* comp, JucerDocument& doc, const int tabIndex_)
+            : ComponentTextProperty<TabbedComponent> ("name", 200, false, comp, doc),
               tabIndex (tabIndex_)
         {
         }
 
-        void setText (const String& newText)
+        void setText (const String& newText) override
         {
             document.perform (new TabNameChangeAction (component, *document.getComponentLayout(), tabIndex, newText),
                               "Change tab name");
         }
 
-        String getText() const
+        String getText() const override
         {
             return component->getTabNames() [tabIndex];
         }
@@ -750,11 +740,11 @@ private:
     private:
         int tabIndex;
 
-        class TabNameChangeAction  : public ComponentUndoableAction <TabbedComponent>
+        class TabNameChangeAction  : public ComponentUndoableAction<TabbedComponent>
         {
         public:
-            TabNameChangeAction (TabbedComponent* const comp, ComponentLayout& layout, const int tabIndex_, const String& newValue_)
-                : ComponentUndoableAction <TabbedComponent> (comp, layout),
+            TabNameChangeAction (TabbedComponent* const comp, ComponentLayout& l, const int tabIndex_, const String& newValue_)
+                : ComponentUndoableAction<TabbedComponent> (comp, l),
                   tabIndex (tabIndex_),
                   newValue (newValue_)
             {
@@ -827,12 +817,12 @@ private:
         JucerDocument& document;
         int tabIndex;
 
-        class TabColourChangeAction  : public ComponentUndoableAction <TabbedComponent>
+        class TabColourChangeAction  : public ComponentUndoableAction<TabbedComponent>
         {
         public:
-            TabColourChangeAction (TabbedComponent* comp, ComponentLayout& layout,
+            TabColourChangeAction (TabbedComponent* comp, ComponentLayout& l,
                                    int tabIndex_, Colour newValue_)
-                : ComponentUndoableAction <TabbedComponent> (comp, layout),
+                : ComponentUndoableAction<TabbedComponent> (comp, l),
                   tabIndex (tabIndex_),
                   newValue (newValue_)
             {
@@ -862,11 +852,11 @@ private:
     };
 
     //==============================================================================
-    class TabContentTypeProperty  : public ComponentChoiceProperty <TabbedComponent>
+    class TabContentTypeProperty  : public ComponentChoiceProperty<TabbedComponent>
     {
     public:
-        TabContentTypeProperty (TabbedComponent* comp, JucerDocument& document, const int tabIndex_)
-            : ComponentChoiceProperty <TabbedComponent> ("content type", comp, document),
+        TabContentTypeProperty (TabbedComponent* comp, JucerDocument& doc, const int tabIndex_)
+            : ComponentChoiceProperty<TabbedComponent> ("content type", comp, doc),
               tabIndex (tabIndex_)
         {
             choices.add ("Jucer content component");
@@ -887,11 +877,11 @@ private:
     private:
         int tabIndex;
 
-        class TabContentTypeChangeAction  : public ComponentUndoableAction <TabbedComponent>
+        class TabContentTypeChangeAction  : public ComponentUndoableAction<TabbedComponent>
         {
         public:
-            TabContentTypeChangeAction (TabbedComponent* const comp, ComponentLayout& layout, const int tabIndex_, const bool newValue_)
-                : ComponentUndoableAction <TabbedComponent> (comp, layout),
+            TabContentTypeChangeAction (TabbedComponent* const comp, ComponentLayout& l, const int tabIndex_, const bool newValue_)
+                : ComponentUndoableAction<TabbedComponent> (comp, l),
                   tabIndex (tabIndex_),
                   newValue (newValue_)
             {
@@ -962,11 +952,11 @@ private:
         JucerDocument& document;
         int tabIndex;
 
-        class JucerCompFileChangeAction  : public ComponentUndoableAction <TabbedComponent>
+        class JucerCompFileChangeAction  : public ComponentUndoableAction<TabbedComponent>
         {
         public:
-            JucerCompFileChangeAction (TabbedComponent* const comp, ComponentLayout& layout, const int tabIndex_, const String& newState_)
-                : ComponentUndoableAction <TabbedComponent> (comp, layout),
+            JucerCompFileChangeAction (TabbedComponent* const comp, ComponentLayout& l, const int tabIndex_, const String& newState_)
+                : ComponentUndoableAction<TabbedComponent> (comp, l),
                   tabIndex (tabIndex_),
                   newState (newState_)
             {
@@ -995,22 +985,22 @@ private:
     };
 
     //==============================================================================
-    class TabContentClassProperty   : public ComponentTextProperty <TabbedComponent>
+    class TabContentClassProperty   : public ComponentTextProperty<TabbedComponent>
     {
     public:
-        TabContentClassProperty (TabbedComponent* comp, JucerDocument& document, const int tabIndex_)
-            : ComponentTextProperty <TabbedComponent> ("content class", 256, false, comp, document),
+        TabContentClassProperty (TabbedComponent* comp, JucerDocument& doc, const int tabIndex_)
+            : ComponentTextProperty<TabbedComponent> ("content class", 256, false, comp, doc),
               tabIndex (tabIndex_)
         {
         }
 
-        void setText (const String& newText)
+        void setText (const String& newText) override
         {
             document.perform (new TabClassNameChangeAction (component, *document.getComponentLayout(), tabIndex, newText),
                               "Change TabbedComponent content class");
         }
 
-        String getText() const
+        String getText() const override
         {
             return getTabClassName (component, tabIndex);
         }
@@ -1018,11 +1008,11 @@ private:
     private:
         int tabIndex;
 
-        class TabClassNameChangeAction  : public ComponentUndoableAction <TabbedComponent>
+        class TabClassNameChangeAction  : public ComponentUndoableAction<TabbedComponent>
         {
         public:
-            TabClassNameChangeAction (TabbedComponent* const comp, ComponentLayout& layout, const int tabIndex_, const String& newValue_)
-                : ComponentUndoableAction <TabbedComponent> (comp, layout),
+            TabClassNameChangeAction (TabbedComponent* const comp, ComponentLayout& l, const int tabIndex_, const String& newValue_)
+                : ComponentUndoableAction<TabbedComponent> (comp, l),
                   tabIndex (tabIndex_),
                   newValue (newValue_)
             {
@@ -1053,22 +1043,22 @@ private:
     };
 
     //==============================================================================
-    class TabContentConstructorParamsProperty   : public ComponentTextProperty <TabbedComponent>
+    class TabContentConstructorParamsProperty   : public ComponentTextProperty<TabbedComponent>
     {
     public:
-        TabContentConstructorParamsProperty (TabbedComponent* comp, JucerDocument& document, const int tabIndex_)
-            : ComponentTextProperty <TabbedComponent> ("constructor params", 512, false, comp, document),
+        TabContentConstructorParamsProperty (TabbedComponent* comp, JucerDocument& doc, const int tabIndex_)
+            : ComponentTextProperty<TabbedComponent> ("constructor params", 512, false, comp, doc),
               tabIndex (tabIndex_)
         {
         }
 
-        void setText (const String& newText)
+        void setText (const String& newText) override
         {
             document.perform (new TabConstructorParamChangeAction (component, *document.getComponentLayout(), tabIndex, newText),
                               "Change TabbedComponent content constructor param");
         }
 
-        String getText() const
+        String getText() const override
         {
             return getTabConstructorParams (component, tabIndex);
         }
@@ -1076,11 +1066,11 @@ private:
     private:
         int tabIndex;
 
-        class TabConstructorParamChangeAction  : public ComponentUndoableAction <TabbedComponent>
+        class TabConstructorParamChangeAction  : public ComponentUndoableAction<TabbedComponent>
         {
         public:
-            TabConstructorParamChangeAction (TabbedComponent* const comp, ComponentLayout& layout, const int tabIndex_, const String& newValue_)
-                : ComponentUndoableAction <TabbedComponent> (comp, layout),
+            TabConstructorParamChangeAction (TabbedComponent* const comp, ComponentLayout& l, const int tabIndex_, const String& newValue_)
+                : ComponentUndoableAction<TabbedComponent> (comp, l),
                   tabIndex (tabIndex_),
                   newValue (newValue_)
             {
@@ -1148,12 +1138,12 @@ private:
         const int tabIndex, totalNumTabs;
 
     private:
-        class MoveTabAction  : public ComponentUndoableAction <TabbedComponent>
+        class MoveTabAction  : public ComponentUndoableAction<TabbedComponent>
         {
         public:
-            MoveTabAction (TabbedComponent* const comp, ComponentLayout& layout,
+            MoveTabAction (TabbedComponent* const comp, ComponentLayout& l,
                            const int oldIndex_, const int newIndex_)
-                : ComponentUndoableAction <TabbedComponent> (comp, layout),
+                : ComponentUndoableAction<TabbedComponent> (comp, l),
                   oldIndex (oldIndex_),
                   newIndex (newIndex_)
             {

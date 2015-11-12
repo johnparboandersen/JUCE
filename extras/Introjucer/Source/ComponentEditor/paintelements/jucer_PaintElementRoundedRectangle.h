@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_PAINTELEMENTROUNDEDRECTANGLE_JUCEHEADER__
-#define __JUCER_PAINTELEMENTROUNDEDRECTANGLE_JUCEHEADER__
+#ifndef JUCER_PAINTELEMENTROUNDEDRECTANGLE_H_INCLUDED
+#define JUCER_PAINTELEMENTROUNDEDRECTANGLE_H_INCLUDED
 
 #include "jucer_ColouredElement.h"
 #include "../jucer_UtilityFunctions.h"
@@ -32,8 +32,8 @@
 class PaintElementRoundedRectangle  : public ColouredElement
 {
 public:
-    PaintElementRoundedRectangle (PaintRoutine* owner)
-        : ColouredElement (owner, "Rounded Rectangle", true, false)
+    PaintElementRoundedRectangle (PaintRoutine* pr)
+        : ColouredElement (pr, "Rounded Rectangle", true, false)
     {
         cornerSize = 10.0;
     }
@@ -55,13 +55,13 @@ public:
         }
     }
 
-    void getEditableProperties (Array <PropertyComponent*>& properties)
+    void getEditableProperties (Array<PropertyComponent*>& props)
     {
-        properties.add (new CornerSizeProperty (this));
+        props.add (new CornerSizeProperty (this));
 
-        ColouredElement::getEditableProperties (properties);
+        ColouredElement::getEditableProperties (props);
 
-        properties.add (new ShapeToPathProperty (this));
+        props.add (new ShapeToPathProperty (this));
     }
 
     //==============================================================================
@@ -249,4 +249,4 @@ private:
 };
 
 
-#endif   // __JUCER_PAINTELEMENTROUNDEDRECTANGLE_JUCEHEADER__
+#endif   // JUCER_PAINTELEMENTROUNDEDRECTANGLE_H_INCLUDED

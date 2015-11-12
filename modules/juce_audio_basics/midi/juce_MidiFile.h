@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -151,9 +151,11 @@ public:
     bool readFrom (InputStream& sourceStream);
 
     /** Writes the midi tracks as a standard midi file.
+        The midiFileType value is written as the file's format type, which can be 0, 1
+        or 2 - see the midi file spec for more info about that.
         @returns true if the operation succeeded.
     */
-    bool writeTo (OutputStream& destStream);
+    bool writeTo (OutputStream& destStream, int midiFileType = 1);
 
     /** Converts the timestamp of all the midi events from midi ticks to seconds.
 

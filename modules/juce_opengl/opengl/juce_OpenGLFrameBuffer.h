@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -105,25 +105,6 @@ public:
 
     /** Selects the framebuffer as the current target, and clears it to transparent. */
     void makeCurrentAndClear();
-
-   #if JUCE_USE_OPENGL_FIXED_FUNCTION
-    /** Draws this framebuffer onto the current context, with the specified corner positions. */
-    void draw2D (float x1, float y1,
-                 float x2, float y2,
-                 float x3, float y3,
-                 float x4, float y4,
-                 Colour colour) const;
-
-    /** Draws this framebuffer onto the current context, with the specified corner positions. */
-    void draw3D (float x1, float y1, float z1,
-                 float x2, float y2, float z2,
-                 float x3, float y3, float z3,
-                 float x4, float y4, float z4,
-                 Colour colour) const;
-
-    /** Draws the framebuffer at a given position. */
-    void drawAt (float x1, float y1) const;
-   #endif
 
     /** Reads an area of pixels from the framebuffer into a 32-bit ARGB pixel array.
         The lineStride is measured as a number of pixels, not bytes - pass a stride

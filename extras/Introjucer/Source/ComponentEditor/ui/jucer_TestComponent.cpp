@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -146,7 +146,7 @@ void TestComponent::paint (Graphics& g)
         g.drawLine (0.0f, (float) getHeight(), (float) getWidth(), 0.0f);
 
         g.setFont (14.0f);
-        g.drawText ("Jucer Component",
+        g.drawText ("Introjucer Component",
                     0, 0, getWidth(), getHeight() / 2,
                     Justification::centred, true);
         g.drawText ("(no file loaded)",

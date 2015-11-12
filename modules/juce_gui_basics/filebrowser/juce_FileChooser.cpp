@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -79,7 +79,7 @@ bool FileChooser::browseForDirectory()
 
 bool FileChooser::showDialog (const int flags, FilePreviewComponent* const previewComp)
 {
-    WeakReference<Component> previouslyFocused (Component::getCurrentlyFocusedComponent());
+    FocusRestorer focusRestorer;
 
     results.clear();
 
@@ -99,7 +99,7 @@ bool FileChooser::showDialog (const int flags, FilePreviewComponent* const previ
    #if JUCE_WINDOWS
     if (useNativeDialogBox && ! (selectsFiles && selectsDirectories))
    #elif JUCE_MAC || JUCE_LINUX
-    if (useNativeDialogBox && (previewComp == nullptr))
+    if (useNativeDialogBox)
    #else
     if (false)
    #endif
@@ -126,9 +126,6 @@ bool FileChooser::showDialog (const int flags, FilePreviewComponent* const previ
                 results.add (browserComponent.getSelectedFile (i));
         }
     }
-
-    if (previouslyFocused != nullptr)
-        previouslyFocused->grabKeyboardFocus();
 
     return results.size() > 0;
 }

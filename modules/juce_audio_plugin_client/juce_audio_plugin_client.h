@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -29,5 +29,10 @@
 #include "../juce_audio_basics/juce_audio_basics.h"
 #include "../juce_audio_processors/juce_audio_processors.h"
 #include "utility/juce_CheckSettingMacros.h"
+
+namespace juce
+{
+ #include "utility/juce_PluginHostType.h"
+}
 
 #endif   // JUCE_AUDIO_PLUGIN_CLIENT_H_INCLUDED

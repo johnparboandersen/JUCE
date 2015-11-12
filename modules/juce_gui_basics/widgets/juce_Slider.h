@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -97,6 +97,16 @@ public:
         TextBoxBelow            /**< Puts the text box below the slider, horizontally centred.  */
     };
 
+    /** Describes the type of mouse-dragging that is happening when a value is being changed.
+        @see snapValue
+     */
+    enum DragMode
+    {
+        notDragging,            /**< Dragging is not active.  */
+        absoluteDrag,           /**< The dragging corresponds directly to the value that is displayed.  */
+        velocityDrag            /**< The dragging value change is relative to the velocity of the mouse mouvement.  */
+    };
+
     //==============================================================================
     /** Creates a slider.
         When created, you can set up the slider's style and range with setSliderStyle(), setRange(), etc.
@@ -157,7 +167,7 @@ public:
     int getMouseDragSensitivity() const noexcept;
 
     //==============================================================================
-    /** Changes the way the the mouse is used when dragging the slider.
+    /** Changes the way the mouse is used when dragging the slider.
 
         If true, this will turn on velocity-sensitive dragging, so that
         the faster the mouse moves, the bigger the movement to the slider. This
@@ -238,9 +248,7 @@ public:
     void setSkewFactorFromMidPoint (double sliderValueToShowAtMidPoint);
 
     /** Returns the current skew factor.
-
         See setSkewFactor for more info.
-
         @see setSkewFactor, setSkewFactorFromMidPoint
     */
     double getSkewFactor() const noexcept;
@@ -543,17 +551,18 @@ public:
 
         @see getDoubleClickReturnValue
     */
-    void setDoubleClickReturnValue (bool isDoubleClickEnabled,
+    void setDoubleClickReturnValue (bool shouldDoubleClickBeEnabled,
                                     double valueToSetOnDoubleClick);
 
     /** Returns the values last set by setDoubleClickReturnValue() method.
-
-        Sets isEnabled to true if double-click is enabled, and returns the value
-        that was set.
-
         @see setDoubleClickReturnValue
     */
-    double getDoubleClickReturnValue (bool& isEnabled) const;
+    double getDoubleClickReturnValue() const noexcept;
+
+    /** Returns true if double-clicking to reset to a default value is enabled.
+        @see setDoubleClickReturnValue
+    */
+    bool isDoubleClickReturnEnabled() const noexcept;
 
     //==============================================================================
     /** Tells the slider whether to keep sending change messages while the user
@@ -588,7 +597,7 @@ public:
 
         If you pass a component as the parentComponentToUse parameter, the pop-up
         bubble will be added as a child of that component when it's needed. If you
-        pass 0, the pop-up will be placed on the desktop instead (note that it's a
+        pass nullptr, the pop-up will be placed on the desktop instead (note that it's a
         transparent window, so if you're using an OS that can't do transparent windows
         you'll have to add it to a parent component instead).
     */
@@ -610,7 +619,6 @@ public:
     void setPopupMenuEnabled (bool menuEnabled);
 
     /** This can be used to stop the mouse scroll-wheel from moving the slider.
-
         By default it's enabled.
     */
     void setScrollWheelEnabled (bool enabled);
@@ -673,6 +681,13 @@ public:
     /** Returns the suffix that was set by setTextValueSuffix(). */
     String getTextValueSuffix() const;
 
+    /** Returns the best number of decimal places to use when displaying this
+        slider's value.
+        It calculates the fewest decimal places needed to represent numbers with
+        the slider's interval setting.
+    */
+    int getNumDecimalPlacesToDisplay() const noexcept;
+
     //==============================================================================
     /** Allows a user-defined mapping of distance along the slider to its value.
 
@@ -711,7 +726,7 @@ public:
         If the slider is rotary, this will throw an assertion and return 0. If the
         value is out-of-range, it will be constrained to the length of the slider.
     */
-    float getPositionOfValue (double value);
+    float getPositionOfValue (double value) const;
 
     //==============================================================================
     /** This can be overridden to allow the slider to snap to user-definable values.
@@ -720,12 +735,13 @@ public:
         a given position, and allows a subclass to sanity-check this value, possibly
         returning a different value to use instead.
 
-        @param attemptedValue       the value the user is trying to enter
-        @param userIsDragging       true if the user is dragging with the mouse; false if
-                                    they are entering the value using the text box
-        @returns                    the value to use instead
+        @param attemptedValue   the value the user is trying to enter
+        @param dragMode         indicates whether the user is dragging with
+                                the mouse; notDragging if they are entering the value
+                                using the text box or other non-dragging interaction
+        @returns                the value to use instead
     */
-    virtual double snapValue (double attemptedValue, bool userIsDragging);
+    virtual double snapValue (double attemptedValue, DragMode dragMode);
 
 
     //==============================================================================
@@ -738,6 +754,10 @@ public:
     bool isHorizontal() const noexcept;
     /** True if the slider moves vertically. */
     bool isVertical() const noexcept;
+    /** True if the slider is in a rotary mode. */
+    bool isRotary() const noexcept;
+    /** True if the slider is in a linear bar mode. */
+    bool isBar() const noexcept;
 
     //==============================================================================
     /** A set of colour IDs to use to change the colour of various aspects of the slider.
@@ -762,7 +782,77 @@ public:
         textBoxOutlineColourId      = 0x1001700   /**< The colour to use for a border around the text-editor box. */
     };
 
-protected:
+    //==============================================================================
+    /** A struct defining the placement of the slider area and the text box area
+        relative to the bounds of the whole Slider component.
+     */
+    struct SliderLayout
+    {
+        Rectangle<int> sliderBounds;
+        Rectangle<int> textBoxBounds;
+    };
+
+    //==============================================================================
+    /** This abstract base class is implemented by LookAndFeel classes to provide
+        slider drawing functionality.
+    */
+    struct JUCE_API  LookAndFeelMethods
+    {
+        virtual ~LookAndFeelMethods() {}
+
+        //==============================================================================
+        virtual void drawLinearSlider (Graphics&,
+                                       int x, int y, int width, int height,
+                                       float sliderPos,
+                                       float minSliderPos,
+                                       float maxSliderPos,
+                                       const Slider::SliderStyle,
+                                       Slider&) = 0;
+
+        virtual void drawLinearSliderBackground (Graphics&,
+                                                 int x, int y, int width, int height,
+                                                 float sliderPos,
+                                                 float minSliderPos,
+                                                 float maxSliderPos,
+                                                 const Slider::SliderStyle style,
+                                                 Slider&) = 0;
+
+        virtual void drawLinearSliderThumb (Graphics&,
+                                            int x, int y, int width, int height,
+                                            float sliderPos,
+                                            float minSliderPos,
+                                            float maxSliderPos,
+                                            const Slider::SliderStyle,
+                                            Slider&) = 0;
+
+        virtual int getSliderThumbRadius (Slider&) = 0;
+
+        virtual void drawRotarySlider (Graphics&,
+                                       int x, int y, int width, int height,
+                                       float sliderPosProportional,
+                                       float rotaryStartAngle,
+                                       float rotaryEndAngle,
+                                       Slider&) = 0;
+
+        virtual Button* createSliderButton (Slider&, bool isIncrement) = 0;
+        virtual Label* createSliderTextBox (Slider&) = 0;
+
+        virtual ImageEffectFilter* getSliderEffect (Slider&) = 0;
+
+        virtual Font getSliderPopupFont (Slider&) = 0;
+        virtual int getSliderPopupPlacement (Slider&) = 0;
+
+        virtual SliderLayout getSliderLayout (Slider&) = 0;
+
+       #if JUCE_CATCH_DEPRECATED_CODE_MISUSE
+        // These methods' parameters have changed: see the new method signatures.
+        virtual void createSliderButton (bool) {}
+        virtual void getSliderEffect() {}
+        virtual void getSliderPopupFont() {}
+        virtual void getSliderPopupPlacement() {}
+       #endif
+    };
+
     //==============================================================================
     /** @internal */
     void paint (Graphics&) override;
@@ -789,11 +879,6 @@ protected:
     /** @internal */
     void colourChanged() override;
 
-    /** Returns the best number of decimal places to use when displaying numbers.
-        This is calculated from the slider's interval setting.
-    */
-    int getNumDecimalPlacesToDisplay() const noexcept;
-
 private:
     //==============================================================================
     JUCE_PUBLIC_IN_DLL_BUILD (class Pimpl)
@@ -815,6 +900,7 @@ private:
     JUCE_DEPRECATED (void setMaxValue (double, bool));
     JUCE_DEPRECATED (void setMinAndMaxValues (double, double, bool, bool));
     JUCE_DEPRECATED (void setMinAndMaxValues (double, double, bool));
+    virtual void snapValue (double, bool) {}
    #endif
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Slider)

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the juce_core module of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission to use, copy, modify, and/or distribute this software for any purpose with
    or without fee is hereby granted, provided that the above copyright notice and this
@@ -86,6 +86,10 @@ public:
     */
     StringArray (const wchar_t* const* strings, int numberOfStrings);
 
+   #if JUCE_COMPILER_SUPPORTS_INITIALIZER_LISTS
+    StringArray (const std::initializer_list<const char*>& strings);
+   #endif
+
     /** Destructor. */
     ~StringArray();
 
@@ -134,18 +138,12 @@ public:
     /** Returns a pointer to the first String in the array.
         This method is provided for compatibility with standard C++ iteration mechanisms.
     */
-    inline String* begin() const noexcept
-    {
-        return strings.begin();
-    }
+    inline String* begin() const noexcept       { return strings.begin(); }
 
     /** Returns a pointer to the String which follows the last element in the array.
         This method is provided for compatibility with standard C++ iteration mechanisms.
     */
-    inline String* end() const noexcept
-    {
-        return strings.end();
-    }
+    inline String* end() const noexcept         { return strings.end(); }
 
     /** Searches for a string in the array.
 
@@ -174,6 +172,11 @@ public:
     /** Appends a string at the end of the array. */
     void add (const String& stringToAdd);
 
+   #if JUCE_COMPILER_SUPPORTS_MOVE_SEMANTICS
+    /** Appends a string at the end of the array. */
+    void add (String&& stringToAdd);
+   #endif
+
     /** Inserts a string into the array.
 
         This will insert a string into the array at the given index, moving
@@ -184,7 +187,6 @@ public:
     void insert (int index, const String& stringToAdd);
 
     /** Adds a string to the array as long as it's not already in there.
-
         The search can optionally be case-insensitive.
     */
     void addIfNotAlreadyThere (const String& stringToAdd, bool ignoreCase = false);
@@ -206,6 +208,15 @@ public:
     void addArray (const StringArray& other,
                    int startIndex = 0,
                    int numElementsToAdd = -1);
+
+    /** Merges the strings from another array into this one.
+        This will not add a string that already exists.
+
+        @param other                the array to add
+        @param ignoreCase           ignore case when merging
+    */
+    void mergeArray (const StringArray& other,
+                     bool ignoreCase = false);
 
     /** Breaks up a string into tokens and adds them to this array.
 
@@ -320,7 +331,6 @@ public:
     void removeDuplicates (bool ignoreCase);
 
     /** Removes empty strings from the array.
-
         @param removeWhitespaceStrings  if true, strings that only contain whitespace
                                         characters will also be removed
     */
@@ -354,10 +364,10 @@ public:
         @param appendNumberToFirstInstance  whether the first of a group of similar strings
                                             also has a number appended to it.
         @param preNumberString              when adding a number, this string is added before the number.
-                                            If you pass 0, a default string will be used, which adds
+                                            If you pass nullptr, a default string will be used, which adds
                                             brackets around the number.
         @param postNumberString             this string is appended after any numbers that are added.
-                                            If you pass 0, a default string will be used, which adds
+                                            If you pass nullptr, a default string will be used, which adds
                                             brackets around the number.
     */
     void appendNumbersToDuplicates (bool ignoreCaseWhenComparing,
@@ -384,10 +394,15 @@ public:
 
     //==============================================================================
     /** Sorts the array into alphabetical order.
-
         @param ignoreCase       if true, the comparisons used will be case-sensitive.
     */
     void sort (bool ignoreCase);
+
+    /** Sorts the array using extra language-aware rules to do a better job of comparing
+        words containing spaces and numbers.
+        @see String::compareNatural()
+    */
+    void sortNatural();
 
     //==============================================================================
     /** Increases the array's internal storage to hold a minimum number of elements.
@@ -406,11 +421,12 @@ public:
     */
     void minimiseStorageOverheads();
 
-
-private:
-    //==============================================================================
+    /** This is the array holding the actual strings. This is public to allow direct access
+        to array methods that may not already be provided by the StringArray class.
+    */
     Array<String> strings;
 
+private:
     JUCE_LEAK_DETECTOR (StringArray)
 };
 

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -102,87 +102,6 @@ namespace CodeHelpers
         return n;
     }
 
-    static void writeEscapeChars (OutputStream& out, const char* utf8, const int numBytes,
-                                  const int maxCharsOnLine, const bool breakAtNewLines,
-                                  const bool replaceSingleQuotes, const bool allowStringBreaks)
-    {
-        int charsOnLine = 0;
-        bool lastWasHexEscapeCode = false;
-
-        for (int i = 0; i < numBytes || numBytes < 0; ++i)
-        {
-            const unsigned char c = (unsigned char) utf8[i];
-            bool startNewLine = false;
-
-            switch (c)
-            {
-                case '\t':  out << "\\t";  lastWasHexEscapeCode = false; charsOnLine += 2; break;
-                case '\r':  out << "\\r";  lastWasHexEscapeCode = false; charsOnLine += 2; break;
-                case '\n':  out << "\\n";  lastWasHexEscapeCode = false; charsOnLine += 2; startNewLine = breakAtNewLines; break;
-                case '\\':  out << "\\\\"; lastWasHexEscapeCode = false; charsOnLine += 2; break;
-                case '\"':  out << "\\\""; lastWasHexEscapeCode = false; charsOnLine += 2; break;
-
-                case 0:
-                    if (numBytes < 0)
-                        return;
-
-                    out << "\\0";
-                    lastWasHexEscapeCode = true;
-                    charsOnLine += 2;
-                    break;
-
-                case '\'':
-                    if (replaceSingleQuotes)
-                    {
-                        out << "\\\'";
-                        lastWasHexEscapeCode = false;
-                        charsOnLine += 2;
-                        break;
-                    }
-
-                    // deliberate fall-through...
-
-                default:
-                    if (c >= 32 && c < 127 && ! (lastWasHexEscapeCode  // (have to avoid following a hex escape sequence with a valid hex digit)
-                                                   && CharacterFunctions::getHexDigitValue (c) >= 0))
-                    {
-                        out << (char) c;
-                        lastWasHexEscapeCode = false;
-                        ++charsOnLine;
-                    }
-                    else if (allowStringBreaks && lastWasHexEscapeCode && c >= 32 && c < 127)
-                    {
-                        out << "\"\"" << (char) c;
-                        lastWasHexEscapeCode = false;
-                        charsOnLine += 3;
-                    }
-                    else
-                    {
-                        out << (c < 16 ? "\\x0" : "\\x") << String::toHexString ((int) c);
-                        lastWasHexEscapeCode = true;
-                        charsOnLine += 4;
-                    }
-
-                    break;
-            }
-
-            if ((startNewLine || (maxCharsOnLine > 0 && charsOnLine >= maxCharsOnLine))
-                 && (numBytes < 0 || i < numBytes - 1))
-            {
-                charsOnLine = 0;
-                out << "\"" << newLine << "\"";
-                lastWasHexEscapeCode = false;
-            }
-        }
-    }
-
-    String addEscapeChars (const String& s)
-    {
-        MemoryOutputStream out;
-        writeEscapeChars (out, s.toRawUTF8(), -1, -1, false, true, true);
-        return out.toUTF8();
-    }
-
     String createIncludeStatement (const File& includeFile, const File& targetFile)
     {
         return createIncludeStatement (FileHelpers::unixStylePath (FileHelpers::getRelativePathFrom (includeFile, targetFile.getParentDirectory())));
@@ -218,22 +137,52 @@ namespace CodeHelpers
             return "String::empty";
 
         StringArray lines;
-        lines.add (text);
+
+        {
+            String::CharPointerType t (text.getCharPointer());
+            bool finished = t.isEmpty();
+
+            while (! finished)
+            {
+                for (String::CharPointerType startOfLine (t);;)
+                {
+                    switch (t.getAndAdvance())
+                    {
+                        case 0:     finished = true; break;
+                        case '\n':  break;
+                        case '\r':  if (*t == '\n') ++t; break;
+                        default:    continue;
+                    }
+
+                    lines.add (String (startOfLine, t));
+                    break;
+                }
+            }
+        }
 
         if (maxLineLength > 0)
         {
-            while (lines [lines.size() - 1].length() > maxLineLength)
+            for (int i = 0; i < lines.size(); ++i)
             {
-                String& lastLine = lines.getReference (lines.size() - 1);
-                const String start (lastLine.substring (0, maxLineLength));
-                const String end (lastLine.substring (maxLineLength));
-                lastLine = start;
-                lines.add (end);
+                String& line = lines.getReference (i);
+
+                if (line.length() > maxLineLength)
+                {
+                    const String start (line.substring (0, maxLineLength));
+                    const String end (line.substring (maxLineLength));
+                    line = start;
+                    lines.insert (i + 1, end);
+                }
             }
         }
 
         for (int i = 0; i < lines.size(); ++i)
-            lines.getReference(i) = "\"" + addEscapeChars (lines.getReference(i)) + "\"";
+            lines.getReference(i) = CppTokeniserFunctions::addEscapeChars (lines.getReference(i));
+
+        lines.removeEmptyStrings();
+
+        for (int i = 0; i < lines.size(); ++i)
+            lines.getReference(i) = "\"" + lines.getReference(i) + "\"";
 
         String result (lines.joinIntoString (newLine));
 
@@ -394,8 +343,8 @@ namespace CodeHelpers
         else
         {
             out << "\"";
-            writeEscapeChars (out, (const char*) data, (int) mb.getSize(),
-                              maxCharsOnLine, breakAtNewLines, false, allowStringBreaks);
+            CppTokeniserFunctions::writeEscapeChars (out, (const char*) data, (int) mb.getSize(),
+                                                     maxCharsOnLine, breakAtNewLines, false, allowStringBreaks);
             out << "\";";
         }
     }

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -71,23 +71,23 @@ public:
         return true;
     }
 
-    void getEditableProperties (Component* component, JucerDocument& document, Array <PropertyComponent*>& properties)
+    void getEditableProperties (Component* component, JucerDocument& document, Array<PropertyComponent*>& props)
     {
-        ComponentTypeHandler::getEditableProperties (component, document, properties);
+        ComponentTypeHandler::getEditableProperties (component, document, props);
 
         ComboBox* const c = dynamic_cast <ComboBox*> (component);
         jassert (c != nullptr);
 
-        properties.add (new ComboItemsProperty (c, document));
-        properties.add (new ComboEditableProperty (c, document));
-        properties.add (new ComboJustificationProperty (c, document));
-        properties.add (new ComboTextWhenNoneSelectedProperty (c, document));
-        properties.add (new ComboTextWhenNoItemsProperty (c, document));
+        props.add (new ComboItemsProperty (c, document));
+        props.add (new ComboEditableProperty (c, document));
+        props.add (new ComboJustificationProperty (c, document));
+        props.add (new ComboTextWhenNoneSelectedProperty (c, document));
+        props.add (new ComboTextWhenNoItemsProperty (c, document));
     }
 
-    String getCreationParameters (Component* component)
+    String getCreationParameters (GeneratedCode&, Component* component)
     {
-        return quotedString (component->getName());
+        return quotedString (component->getName(), false);
     }
 
     void fillInCreationCode (GeneratedCode& code, Component* component, const String& memberVariableName)
@@ -100,8 +100,8 @@ public:
         String s;
         s << memberVariableName << "->setEditableText (" << CodeHelpers::boolLiteral (c->isTextEditable()) << ");\n"
           << memberVariableName << "->setJustificationType (" << CodeHelpers::justificationToCode (c->getJustificationType()) << ");\n"
-          << memberVariableName << "->setTextWhenNothingSelected (" << quotedString (c->getTextWhenNothingSelected()) << ");\n"
-          << memberVariableName << "->setTextWhenNoChoicesAvailable (" << quotedString (c->getTextWhenNoChoicesAvailable()) << ");\n";
+          << memberVariableName << "->setTextWhenNothingSelected (" << quotedString (c->getTextWhenNothingSelected(), code.shouldUseTransMacro()) << ");\n"
+          << memberVariableName << "->setTextWhenNoChoicesAvailable (" << quotedString (c->getTextWhenNoChoicesAvailable(), code.shouldUseTransMacro()) << ");\n";
 
         StringArray lines;
         lines.addLines (c->getProperties() ["items"].toString());
@@ -113,7 +113,7 @@ public:
                 s << memberVariableName << "->addSeparator();\n";
             else
                 s << memberVariableName << "->addItem ("
-                  << quotedString (lines[i]) << ", " << itemId++ << ");\n";
+                  << quotedString (lines[i], code.shouldUseTransMacro()) << ", " << itemId++ << ");\n";
         }
 
         if (needsCallback (component))
@@ -193,8 +193,8 @@ private:
         class ComboEditableChangeAction  : public ComponentUndoableAction <ComboBox>
         {
         public:
-            ComboEditableChangeAction (ComboBox* const comp, ComponentLayout& layout, const bool newState_)
-                : ComponentUndoableAction <ComboBox> (comp, layout),
+            ComboEditableChangeAction (ComboBox* const comp, ComponentLayout& l, const bool newState_)
+                : ComponentUndoableAction <ComboBox> (comp, l),
                   newState (newState_)
             {
                 oldState = comp->isTextEditable();
@@ -246,8 +246,8 @@ private:
         class ComboJustifyChangeAction  : public ComponentUndoableAction <ComboBox>
         {
         public:
-            ComboJustifyChangeAction (ComboBox* const comp, ComponentLayout& layout, Justification newState_)
-                : ComponentUndoableAction <ComboBox> (comp, layout),
+            ComboJustifyChangeAction (ComboBox* const comp, ComponentLayout& l, Justification newState_)
+                : ComponentUndoableAction <ComboBox> (comp, l),
                   newState (newState_),
                   oldState (comp->getJustificationType())
             {
@@ -281,13 +281,13 @@ private:
             : ComponentTextProperty <ComboBox> ("items", 10000, true, comp, doc)
         {}
 
-        void setText (const String& newText)
+        void setText (const String& newText) override
         {
             document.perform (new ComboItemsChangeAction (component, *document.getComponentLayout(), newText),
                               "Change combo box items");
         }
 
-        String getText() const
+        String getText() const override
         {
             return component->getProperties() ["items"];
         }
@@ -296,8 +296,8 @@ private:
         class ComboItemsChangeAction  : public ComponentUndoableAction <ComboBox>
         {
         public:
-            ComboItemsChangeAction (ComboBox* const comp, ComponentLayout& layout, const String& newState_)
-                : ComponentUndoableAction <ComboBox> (comp, layout),
+            ComboItemsChangeAction (ComboBox* const comp, ComponentLayout& l, const String& newState_)
+                : ComponentUndoableAction <ComboBox> (comp, l),
                   newState (newState_)
             {
                 oldState = comp->getProperties() ["items"];
@@ -333,13 +333,13 @@ private:
             : ComponentTextProperty <ComboBox> ("text when none selected", 200, false, comp, doc)
         {}
 
-        void setText (const String& newText)
+        void setText (const String& newText) override
         {
             document.perform (new ComboNonSelTextChangeAction (component, *document.getComponentLayout(), newText),
                               "Change combo box text when nothing selected");
         }
 
-        String getText() const
+        String getText() const override
         {
             return component->getTextWhenNothingSelected();
         }
@@ -348,8 +348,8 @@ private:
         class ComboNonSelTextChangeAction  : public ComponentUndoableAction <ComboBox>
         {
         public:
-            ComboNonSelTextChangeAction (ComboBox* const comp, ComponentLayout& layout, const String& newState_)
-                : ComponentUndoableAction <ComboBox> (comp, layout),
+            ComboNonSelTextChangeAction (ComboBox* const comp, ComponentLayout& l, const String& newState_)
+                : ComponentUndoableAction <ComboBox> (comp, l),
                   newState (newState_)
             {
                 oldState = comp->getTextWhenNothingSelected();
@@ -383,13 +383,13 @@ private:
             : ComponentTextProperty <ComboBox> ("text when no items", 200, false, comp, doc)
         {}
 
-        void setText (const String& newText)
+        void setText (const String& newText) override
         {
             document.perform (new ComboNoItemTextChangeAction (component, *document.getComponentLayout(), newText),
                               "Change combo box 'no items' text");
         }
 
-        String getText() const
+        String getText() const override
         {
             return component->getTextWhenNoChoicesAvailable();
         }
@@ -398,8 +398,8 @@ private:
         class ComboNoItemTextChangeAction  : public ComponentUndoableAction <ComboBox>
         {
         public:
-            ComboNoItemTextChangeAction (ComboBox* const comp, ComponentLayout& layout, const String& newState_)
-                : ComponentUndoableAction <ComboBox> (comp, layout),
+            ComboNoItemTextChangeAction (ComboBox* const comp, ComponentLayout& l, const String& newState_)
+                : ComponentUndoableAction <ComboBox> (comp, l),
                   newState (newState_)
             {
                 oldState = comp->getTextWhenNoChoicesAvailable();

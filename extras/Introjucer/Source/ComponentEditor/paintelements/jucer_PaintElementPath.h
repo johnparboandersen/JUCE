@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_PAINTELEMENTPATH_JUCEHEADER__
-#define __JUCER_PAINTELEMENTPATH_JUCEHEADER__
+#ifndef JUCER_PAINTELEMENTPATH_H_INCLUDED
+#define JUCER_PAINTELEMENTPATH_H_INCLUDED
 
 #include "jucer_ColouredElement.h"
 #include "jucer_ElementSiblingComponent.h"
@@ -51,7 +51,7 @@ public:
                           const bool undoable);
 
     void deleteFromPath();
-    void getEditableProperties (Array <PropertyComponent*>& properties);
+    void getEditableProperties (Array<PropertyComponent*>& props);
 
 private:
     PathPoint withChangedPointType (const Path::Iterator::PathElementType newType,
@@ -97,7 +97,7 @@ public:
     void setNonZeroWinding (const bool nonZero, const bool undoable);
 
     //==============================================================================
-    void getEditableProperties (Array <PropertyComponent*>& properties);
+    void getEditableProperties (Array<PropertyComponent*>& props);
 
     void fillInGeneratedCode (GeneratedCode& code, String& paintMethodCode);
 
@@ -173,4 +173,4 @@ private:
 };
 
 
-#endif   // __JUCER_PAINTELEMENTPATH_JUCEHEADER__
+#endif   // JUCER_PAINTELEMENTPATH_H_INCLUDED

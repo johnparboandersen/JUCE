@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the juce_core module of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission to use, copy, modify, and/or distribute this software for any purpose with
    or without fee is hereby granted, provided that the above copyright notice and this
@@ -75,7 +75,7 @@ const File File::nonexistent;
 String File::parseAbsolutePath (const String& p)
 {
     if (p.isEmpty())
-        return String::empty;
+        return String();
 
 #if JUCE_WINDOWS
     // Windows..
@@ -219,6 +219,11 @@ bool File::setReadOnly (const bool shouldBeReadOnly,
     return setFileReadOnlyInternal (shouldBeReadOnly) && worked;
 }
 
+bool File::setExecutePermission (bool shouldBeExecutable) const
+{
+    return setFileExecutableInternal (shouldBeExecutable);
+}
+
 bool File::deleteRecursively() const
 {
     bool worked = true;
@@ -322,7 +327,7 @@ String File::getFileNameWithoutExtension() const
 
 bool File::isAChildOf (const File& potentialParent) const
 {
-    if (potentialParent == File::nonexistent)
+    if (potentialParent.fullPath.isEmpty())
         return false;
 
     const String ourPath (getPathUpToLastSlash());
@@ -355,7 +360,7 @@ File File::getChildFile (StringRef relativePath) const
     if (isAbsolutePath (relativePath))
         return File (String (relativePath.text));
 
-    if (relativePath.text[0] != '.')
+    if (relativePath[0] != '.')
         return File (addTrailingSeparator (fullPath) + relativePath);
 
     String path (fullPath);
@@ -368,11 +373,11 @@ File File::getChildFile (StringRef relativePath) const
 
     while (relativePath[0] == '.')
     {
-        const juce_wchar secondChar = relativePath.text[1];
+        const juce_wchar secondChar = relativePath[1];
 
         if (secondChar == '.')
         {
-            const juce_wchar thirdChar = relativePath.text[2];
+            const juce_wchar thirdChar = relativePath[2];
 
             if (thirdChar == 0 || thirdChar == separator)
             {
@@ -476,17 +481,17 @@ bool File::loadFileAsData (MemoryBlock& destBlock) const
         return false;
 
     FileInputStream in (*this);
-    return in.openedOk() && getSize() == in.readIntoMemoryBlock (destBlock);
+    return in.openedOk() && getSize() == (int64) in.readIntoMemoryBlock (destBlock);
 }
 
 String File::loadFileAsString() const
 {
     if (! existsAsFile())
-        return String::empty;
+        return String();
 
     FileInputStream in (*this);
     return in.openedOk() ? in.readEntireStreamAsString()
-                         : String::empty;
+                         : String();
 }
 
 void File::readLines (StringArray& destLines) const
@@ -500,10 +505,9 @@ int File::findChildFiles (Array<File>& results,
                           const bool searchRecursively,
                           const String& wildCardPattern) const
 {
-    DirectoryIterator di (*this, searchRecursively, wildCardPattern, whatToLookFor);
-
     int total = 0;
-    while (di.next())
+
+    for (DirectoryIterator di (*this, searchRecursively, wildCardPattern, whatToLookFor); di.next();)
     {
         results.add (di.getFile());
         ++total;
@@ -514,10 +518,9 @@ int File::findChildFiles (Array<File>& results,
 
 int File::getNumberOfChildFiles (const int whatToLookFor, const String& wildCardPattern) const
 {
-    DirectoryIterator di (*this, false, wildCardPattern, whatToLookFor);
-
     int total = 0;
-    while (di.next())
+
+    for (DirectoryIterator di (*this, false, wildCardPattern, whatToLookFor); di.next();)
         ++total;
 
     return total;
@@ -600,7 +603,7 @@ String File::getFileExtension() const
     if (indexOfDot > fullPath.lastIndexOfChar (separator))
         return fullPath.substring (indexOfDot);
 
-    return String::empty;
+    return String();
 }
 
 bool File::hasFileExtension (StringRef possibleSuffix) const
@@ -631,7 +634,7 @@ bool File::hasFileExtension (StringRef possibleSuffix) const
 File File::withFileExtension (StringRef newExtension) const
 {
     if (fullPath.isEmpty())
-        return File::nonexistent;
+        return File();
 
     String filePart (getFileName());
 
@@ -756,7 +759,7 @@ String File::createLegalPathName (const String& original)
     String s (original);
     String start;
 
-    if (s[1] == ':')
+    if (s.isNotEmpty() && s[1] == ':')
     {
         start = s.substring (0, 2);
         s = s.substring (2);
@@ -883,6 +886,41 @@ File File::createTempFile (StringRef fileNameEnding)
     return tempFile;
 }
 
+bool File::createSymbolicLink (const File& linkFileToCreate, bool overwriteExisting) const
+{
+    if (linkFileToCreate.exists())
+    {
+        if (! linkFileToCreate.isSymbolicLink())
+        {
+            // user has specified an existing file / directory as the link
+            // this is bad! the user could end up unintentionally destroying data
+            jassertfalse;
+            return false;
+        }
+
+        if (overwriteExisting)
+            linkFileToCreate.deleteFile();
+    }
+
+   #if JUCE_MAC || JUCE_LINUX
+    // one common reason for getting an error here is that the file already exists
+    if (symlink (fullPath.toRawUTF8(), linkFileToCreate.getFullPathName().toRawUTF8()) == -1)
+    {
+        jassertfalse;
+        return false;
+    }
+
+    return true;
+   #elif JUCE_WINDOWS
+    return CreateSymbolicLink (linkFileToCreate.getFullPathName().toWideCharPointer(),
+                               fullPath.toWideCharPointer(),
+                               isDirectory() ? SYMBOLIC_LINK_FLAG_DIRECTORY : 0) != FALSE;
+   #else
+    jassertfalse; // symbolic links not supported on this platform!
+    return false;
+   #endif
+}
+
 //==============================================================================
 MemoryMappedFile::MemoryMappedFile (const File& file, MemoryMappedFile::AccessMode mode)
     : address (nullptr), range (0, file.getSize()), fileHandle (0)
@@ -905,7 +943,7 @@ class FileTests  : public UnitTest
 public:
     FileTests() : UnitTest ("Files") {}
 
-    void runTest()
+    void runTest() override
     {
         beginTest ("Reading");
 
@@ -913,6 +951,11 @@ public:
         const File temp (File::getSpecialLocation (File::tempDirectory));
 
         expect (! File::nonexistent.exists());
+        expect (! File::nonexistent.existsAsFile());
+        expect (! File::nonexistent.isDirectory());
+       #if ! JUCE_WINDOWS
+        expect (File("/").isDirectory());
+       #endif
         expect (home.isDirectory());
         expect (home.exists());
         expect (! home.existsAsFile());

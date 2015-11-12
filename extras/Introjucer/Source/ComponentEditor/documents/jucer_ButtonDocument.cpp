@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -318,7 +318,7 @@ void ButtonDocument::fillInGeneratedCode (GeneratedCode& code) const
 {
     JucerDocument::fillInGeneratedCode (code);
 
-    code.parentClassInitialiser = "Button (" + quotedString (code.componentName) + ")";
+    code.parentClassInitialiser = "Button (" + quotedString (code.componentName, false) + ")";
     code.removeCallback ("void", "paint (Graphics& g)");
 }
 

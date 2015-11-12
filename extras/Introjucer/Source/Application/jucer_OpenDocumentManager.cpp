@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -103,9 +103,9 @@ void OpenDocumentManager::clear()
 }
 
 //==============================================================================
-void OpenDocumentManager::registerType (DocumentType* type)
+void OpenDocumentManager::registerType (DocumentType* type, int index)
 {
-    types.add (type);
+    types.insert (index, type);
 }
 
 //==============================================================================
@@ -195,8 +195,15 @@ bool OpenDocumentManager::closeDocument (int index, bool saveIfNeeded)
             if (saveIfNeededAndUserAgrees (doc) != FileBasedDocument::savedOk)
                 return false;
 
+        bool canClose = true;
+
         for (int i = listeners.size(); --i >= 0;)
-            listeners.getUnchecked(i)->documentAboutToClose (doc);
+            if (DocumentCloseListener* l = listeners[i])
+                if (! l->documentAboutToClose (doc))
+                    canClose = false;
+
+        if (! canClose)
+            return false;
 
         documents.remove (index);
         IntrojucerApp::getCommandManager().commandStatusChanged();
@@ -213,12 +220,9 @@ bool OpenDocumentManager::closeDocument (Document* document, bool saveIfNeeded)
 void OpenDocumentManager::closeFile (const File& f, bool saveIfNeeded)
 {
     for (int i = documents.size(); --i >= 0;)
-    {
-        Document* d = documents.getUnchecked (i);
-
-        if (d->isForFile (f))
-            closeDocument (i, saveIfNeeded);
-    }
+        if (Document* d = documents[i])
+            if (d->isForFile (f))
+                closeDocument (i, saveIfNeeded);
 }
 
 bool OpenDocumentManager::closeAll (bool askUserToSave)
@@ -233,15 +237,10 @@ bool OpenDocumentManager::closeAll (bool askUserToSave)
 bool OpenDocumentManager::closeAllDocumentsUsingProject (Project& project, bool saveIfNeeded)
 {
     for (int i = documents.size(); --i >= 0;)
-    {
-        Document* d = documents.getUnchecked (i);
-
-        if (d->refersToProject (project))
-        {
-            if (! closeDocument (i, saveIfNeeded))
-                return false;
-        }
-    }
+        if (Document* d = documents[i])
+            if (d->refersToProject (project))
+                if (! closeDocument (i, saveIfNeeded))
+                    return false;
 
     return true;
 }
@@ -249,12 +248,8 @@ bool OpenDocumentManager::closeAllDocumentsUsingProject (Project& project, bool 
 bool OpenDocumentManager::anyFilesNeedSaving() const
 {
     for (int i = documents.size(); --i >= 0;)
-    {
-        Document* d = documents.getUnchecked (i);
-
-        if (d->needsSaving())
+        if (documents.getUnchecked (i)->needsSaving())
             return true;
-    }
 
     return false;
 }
@@ -263,10 +258,11 @@ bool OpenDocumentManager::saveAll()
 {
     for (int i = documents.size(); --i >= 0;)
     {
-        Document* d = documents.getUnchecked (i);
-
-        if (! d->save())
+        if (! documents.getUnchecked (i)->save())
             return false;
+
+        IntrojucerApp::getApp().mainWindowList.updateAllWindowTitles();
+        IntrojucerApp::getCommandManager().commandStatusChanged();
     }
 
     return true;
@@ -359,13 +355,15 @@ OpenDocumentManager::Document* RecentDocumentList::getClosestPreviousDocOtherTha
     return nullptr;
 }
 
-void RecentDocumentList::documentAboutToClose (OpenDocumentManager::Document* document)
+bool RecentDocumentList::documentAboutToClose (OpenDocumentManager::Document* document)
 {
     previousDocs.removeAllInstancesOf (document);
     nextDocs.removeAllInstancesOf (document);
 
     jassert (! previousDocs.contains (document));
     jassert (! nextDocs.contains (document));
+
+    return true;
 }
 
 static void restoreDocList (Project& project, Array <OpenDocumentManager::Document*>& list, const XmlElement* xml)

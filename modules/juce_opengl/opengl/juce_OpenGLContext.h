@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -87,6 +87,9 @@ public:
     /** Returns the component to which this context is currently attached, or nullptr. */
     Component* getTargetComponent() const noexcept;
 
+    /** If the given component has an OpenGLContext attached, then this will return it. */
+    static OpenGLContext* getContextAttachedTo (Component& component) noexcept;
+
     //==============================================================================
     /** Sets the pixel format which you'd like to use for the target GL surface.
         Note: This must be called BEFORE attaching your context to a target component!
@@ -108,6 +111,18 @@ public:
 
     /** Returns true if shaders can be used in this context. */
     bool areShadersAvailable() const;
+
+    /** OpenGL versions, used by setOpenGLVersionRequired(). */
+    enum OpenGLVersion
+    {
+        defaultGLVersion = 0,
+        openGL3_2
+    };
+
+    /** Sets a preference for the version of GL that this context should use, if possible.
+        Some platforms may ignore this value.
+    */
+    void setOpenGLVersionRequired (OpenGLVersion) noexcept;
 
     /** Enables or disables the use of the GL context to perform 2D rendering
         of the component to which it is attached.
@@ -250,6 +265,12 @@ public:
                       bool textureOriginIsBottomLeft);
 
 
+    /** Changes the amount of GPU memory that the internal cache for Images is allowed to use. */
+    void setImageCacheSize (size_t cacheSizeBytes) noexcept;
+
+    /** Returns the amount of GPU memory that the internal cache for Images is allowed to use. */
+    size_t getImageCacheSize() const noexcept;
+
     //==============================================================================
    #ifndef DOXYGEN
     class NativeContext;
@@ -262,8 +283,10 @@ private:
     OpenGLRenderer* renderer;
     double currentRenderScale;
     ScopedPointer<Attachment> attachment;
-    OpenGLPixelFormat pixelFormat;
+    OpenGLPixelFormat openGLPixelFormat;
     void* contextToShareWith;
+    OpenGLVersion versionRequired;
+    size_t imageCacheMaxSize;
     bool renderComponents, useMultisampling, continuousRepaint;
 
     CachedImage* getCachedImage() const noexcept;

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the juce_core module of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission to use, copy, modify, and/or distribute this software for any purpose with
    or without fee is hereby granted, provided that the above copyright notice and this
@@ -76,6 +76,11 @@ String StringPairArray::getValue (StringRef key, const String& defaultReturnValu
         return values[i];
 
     return defaultReturnValue;
+}
+
+bool StringPairArray::containsKey (StringRef key) const noexcept
+{
+    return keys.contains (key);
 }
 
 void StringPairArray::set (const String& key, const String& value)

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the juce_core module of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission to use, copy, modify, and/or distribute this software for any purpose with
    or without fee is hereby granted, provided that the above copyright notice and this
@@ -36,7 +36,7 @@ void* getUser32Function (const char* functionName)
 }
 
 //==============================================================================
-#if ! JUCE_USE_INTRINSICS
+#if ! JUCE_USE_MSVC_INTRINSICS
 // In newer compilers, the inline versions of these are used (in juce_Atomic.h), but in
 // older ones we have to actually call the ops as win32 functions..
 long juce_InterlockedExchange (volatile long* a, long b) noexcept                { return InterlockedExchange (a, b); }
@@ -110,7 +110,7 @@ void Thread::launchThread()
 {
     unsigned int newThreadId;
     threadHandle = (void*) _beginthreadex (0, 0, &threadEntryProc, this, 0, &newThreadId);
-    threadId = (ThreadID) newThreadId;
+    threadId = (ThreadID) (pointer_sized_int) newThreadId;
 }
 
 void Thread::closeThreadHandle()
@@ -444,7 +444,7 @@ void InterProcessLock::exit()
 class ChildProcess::ActiveProcess
 {
 public:
-    ActiveProcess (const String& command)
+    ActiveProcess (const String& command, int streamFlags)
         : ok (false), readPipe (0), writePipe (0)
     {
         SECURITY_ATTRIBUTES securityAtts = { 0 };
@@ -456,11 +456,12 @@ public:
         {
             STARTUPINFOW startupInfo = { 0 };
             startupInfo.cb = sizeof (startupInfo);
-            startupInfo.hStdError  = writePipe;
-            startupInfo.hStdOutput = writePipe;
+
+            startupInfo.hStdOutput = (streamFlags & wantStdOut) != 0 ? writePipe : 0;
+            startupInfo.hStdError  = (streamFlags & wantStdErr) != 0 ? writePipe : 0;
             startupInfo.dwFlags = STARTF_USESTDHANDLES;
 
-            ok = CreateProcess (nullptr, const_cast <LPWSTR> (command.toWideCharPointer()),
+            ok = CreateProcess (nullptr, const_cast<LPWSTR> (command.toWideCharPointer()),
                                 nullptr, nullptr, TRUE, CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
                                 nullptr, nullptr, &startupInfo, &processInfo) != FALSE;
         }
@@ -481,12 +482,12 @@ public:
             CloseHandle (writePipe);
     }
 
-    bool isRunning() const
+    bool isRunning() const noexcept
     {
         return WaitForSingleObject (processInfo.hProcess, 0) != WAIT_OBJECT_0;
     }
 
-    int read (void* dest, int numNeeded) const
+    int read (void* dest, int numNeeded) const noexcept
     {
         int total = 0;
 
@@ -521,9 +522,16 @@ public:
         return total;
     }
 
-    bool killProcess() const
+    bool killProcess() const noexcept
     {
         return TerminateProcess (processInfo.hProcess, 0) != FALSE;
+    }
+
+    uint32 getExitCode() const noexcept
+    {
+        DWORD exitCode = 0;
+        GetExitCodeProcess (processInfo.hProcess, &exitCode);
+        return (uint32) exitCode;
     }
 
     bool ok;
@@ -535,9 +543,9 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ActiveProcess)
 };
 
-bool ChildProcess::start (const String& command)
+bool ChildProcess::start (const String& command, int streamFlags)
 {
-    activeProcess = new ActiveProcess (command);
+    activeProcess = new ActiveProcess (command, streamFlags);
 
     if (! activeProcess->ok)
         activeProcess = nullptr;
@@ -545,24 +553,23 @@ bool ChildProcess::start (const String& command)
     return activeProcess != nullptr;
 }
 
-bool ChildProcess::start (const StringArray& args)
+bool ChildProcess::start (const StringArray& args, int streamFlags)
 {
-    return start (args.joinIntoString (" "));
-}
+    String escaped;
 
-bool ChildProcess::isRunning() const
-{
-    return activeProcess != nullptr && activeProcess->isRunning();
-}
+    for (int i = 0; i < args.size(); ++i)
+    {
+        String arg (args[i]);
 
-int ChildProcess::readProcessOutput (void* dest, int numBytes)
-{
-    return activeProcess != nullptr ? activeProcess->read (dest, numBytes) : 0;
-}
+        // If there are spaces, surround it with quotes. If there are quotes,
+        // replace them with \" so that CommandLineToArgv will correctly parse them.
+        if (arg.containsAnyOf ("\" "))
+            arg = arg.replace ("\"", "\\\"").quoted();
 
-bool ChildProcess::kill()
-{
-    return activeProcess == nullptr || activeProcess->killProcess();
+        escaped << arg << ' ';
+    }
+
+    return start (escaped.trim(), streamFlags);
 }
 
 //==============================================================================

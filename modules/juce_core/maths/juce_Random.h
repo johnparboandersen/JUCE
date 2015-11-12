@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the juce_core module of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission to use, copy, modify, and/or distribute this software for any purpose with
    or without fee is hereby granted, provided that the above copyright notice and this
@@ -68,6 +68,11 @@ public:
         @returns a random integer between 0 (inclusive) and maxValue (exclusive).
     */
     int nextInt (int maxValue) noexcept;
+
+    /** Returns the next random number, limited to a given range.
+        @returns a random integer between the range start (inclusive) and its end (exclusive).
+    */
+    int nextInt (Range<int> range) noexcept;
 
     /** Returns the next 64-bit random number.
         @returns a random integer from the full range 0x8000000000000000 to 0x7fffffffffffffff

@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -129,9 +129,9 @@ private:
                 typedef AudioData::Pointer <AudioData::Float32, AudioData::NativeEndian, AudioData::NonInterleaved, AudioData::Const> SourceSampleFormat;
 
                 CDSampleFormat left (buffer, 2);
-                left.convertSamples (SourceSampleFormat (tempBuffer.getSampleData (0)), numSamples);
+                left.convertSamples (SourceSampleFormat (tempBuffer.getReadPointer (0)), numSamples);
                 CDSampleFormat right (buffer + 2, 2);
-                right.convertSamples (SourceSampleFormat (tempBuffer.getSampleData (1)), numSamples);
+                right.convertSamples (SourceSampleFormat (tempBuffer.getReadPointer (1)), numSamples);
 
                 source->readPosition += numSamples;
             }

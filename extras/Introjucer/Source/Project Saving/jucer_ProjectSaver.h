@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_PROJECTSAVER_JUCEHEADER__
-#define __JUCER_PROJECTSAVER_JUCEHEADER__
+#ifndef JUCER_PROJECTSAVER_H_INCLUDED
+#define JUCER_PROJECTSAVER_H_INCLUDED
 
 #include "jucer_ResourceFile.h"
 #include "../Project/jucer_Module.h"
@@ -83,11 +83,13 @@ public:
         OwnedArray<LibraryModule> modules;
         project.getModules().createRequiredModules (modules);
 
-        if (errors.size() == 0)  writeAppConfigFile (modules, appConfigUserContent);
-        if (errors.size() == 0)  writeBinaryDataFiles();
-        if (errors.size() == 0)  writeAppHeader (modules);
-        if (errors.size() == 0)  writeProjects (modules);
-        if (errors.size() == 0)  writeAppConfigFile (modules, appConfigUserContent); // (this is repeated in case the projects added anything to it)
+        checkModuleValidity (modules);
+
+        if (errors.size() == 0) writeAppConfigFile (modules, appConfigUserContent);
+        if (errors.size() == 0) writeBinaryDataFiles();
+        if (errors.size() == 0) writeAppHeader (modules);
+        if (errors.size() == 0) writeProjects (modules);
+        if (errors.size() == 0) writeAppConfigFile (modules, appConfigUserContent); // (this is repeated in case the projects added anything to it)
 
         if (errors.size() == 0 && generatedCodeFolder.exists())
             writeReadmeFile();
@@ -119,7 +121,7 @@ public:
         if (! generatedCodeFolder.createDirectory())
         {
             addError ("Couldn't create folder: " + generatedCodeFolder.getFullPathName());
-            return Project::Item (project, ValueTree::invalid);
+            return Project::Item (project, ValueTree());
         }
 
         const File file (generatedCodeFolder.getChildFile (filePath));
@@ -127,7 +129,7 @@ public:
         if (replaceFileIfDifferent (file, newData))
             return addFileToGeneratedGroup (file);
 
-        return Project::Item (project, ValueTree::invalid);
+        return Project::Item (project, ValueTree());
     }
 
     Project::Item addFileToGeneratedGroup (const File& file)
@@ -137,7 +139,7 @@ public:
         if (item.isValid())
             return item;
 
-        generatedFilesGroup.addFile (file, -1, true);
+        generatedFilesGroup.addFileAtIndex (file, -1, true);
         return generatedFilesGroup.findItemForFile (file);
     }
 
@@ -160,8 +162,6 @@ public:
     static String getJuceCodeGroupName()                            { return "Juce Library Code"; }
 
     File getGeneratedCodeFolder() const                             { return generatedCodeFolder; }
-    File getLocalModulesFolder() const                              { return generatedCodeFolder.getChildFile ("modules"); }
-    File getLocalModuleFolder (const String& moduleID) const        { return getLocalModulesFolder().getChildFile (moduleID); }
 
     bool replaceFileIfDifferent (const File& f, const MemoryOutputStream& newData)
     {
@@ -176,6 +176,11 @@ public:
         return true;
     }
 
+    static bool shouldFolderBeIgnoredWhenCopying (const File& f)
+    {
+        return f.getFileName() == ".git" || f.getFileName() == ".svn" || f.getFileName() == ".cvs";
+    }
+
     bool copyFolder (const File& source, const File& dest)
     {
         if (source.isDirectory() && dest.createDirectory())
@@ -185,18 +190,25 @@ public:
 
             for (int i = 0; i < subFiles.size(); ++i)
             {
-                const File target (dest.getChildFile (subFiles.getReference(i).getFileName()));
+                const File f (subFiles.getReference(i));
+                const File target (dest.getChildFile (f.getFileName()));
                 filesCreated.add (target);
-                if (! subFiles.getReference(i).copyFileTo (target))
+
+                if (! f.copyFileTo (target))
                     return false;
             }
 
-            subFiles.clear();
-            source.findChildFiles (subFiles, File::findDirectories, false);
+            Array<File> subFolders;
+            source.findChildFiles (subFolders, File::findDirectories, false);
 
-            for (int i = 0; i < subFiles.size(); ++i)
-                if (! copyFolder (subFiles.getReference(i), dest.getChildFile (subFiles.getReference(i).getFileName())))
-                    return false;
+            for (int i = 0; i < subFolders.size(); ++i)
+            {
+                const File f (subFolders.getReference(i));
+
+                if (! shouldFolderBeIgnoredWhenCopying (f))
+                    if (! copyFolder (f, dest.getChildFile (f.getFileName())))
+                        return false;
+            }
 
             return true;
         }
@@ -205,6 +217,7 @@ public:
     }
 
     Project& project;
+    SortedSet<File> filesCreated;
 
 private:
     const File projectFile, generatedCodeFolder;
@@ -214,7 +227,6 @@ private:
     CriticalSection errorLock;
 
     File appConfigFile;
-    SortedSet<File> filesCreated;
     bool hasBinaryData;
 
     // Recursively clears out any files in a folder that we didn't create, but avoids
@@ -255,7 +267,7 @@ private:
 
     static bool shouldFileBeKept (const String& filename)
     {
-        const char* filesToKeep[] = { ".svn", ".cvs", "CMakeLists.txt" };
+        static const char* filesToKeep[] = { ".svn", ".cvs", "CMakeLists.txt" };
 
         for (int i = 0; i < numElementsInArray (filesToKeep); ++i)
             if (filename == filesToKeep[i])
@@ -317,6 +329,27 @@ private:
         return userContent.joinIntoString (newLine) + newLine;
     }
 
+    void checkModuleValidity (OwnedArray<LibraryModule>& modules)
+    {
+        for (LibraryModule** moduleIter = modules.begin(); moduleIter != modules.end(); ++moduleIter)
+        {
+            if (const LibraryModule* const module = *moduleIter)
+            {
+                if (! module->isValid())
+                {
+                    addError ("At least one of your JUCE module paths is invalid!\n"
+                              "Please go to Config -> Modules and ensure each path points to the correct JUCE modules folder.");
+                    return;
+                }
+            }
+            else
+            {
+                // this should never happen!
+                jassertfalse;
+            }
+        }
+    }
+
     void writeAppConfig (OutputStream& out, const OwnedArray<LibraryModule>& modules, const String& userContent)
     {
         writeAutoGenWarningComment (out);
@@ -347,6 +380,21 @@ private:
             LibraryModule* const m = modules.getUnchecked(k);
             out << "#define JUCE_MODULE_AVAILABLE_" << m->getID()
                 << String::repeatedString (" ", longestName + 5 - m->getID().length()) << " 1" << newLine;
+        }
+
+        out << newLine;
+
+        {
+            int isStandaloneApplication = 1;
+            const ProjectType& type = project.getProjectType();
+
+            if (type.isAudioPlugin() || type.isDynamicLibrary() || type.isBrowserPlugin())
+                isStandaloneApplication = 0;
+
+            out << "//==============================================================================" << newLine;
+            out << "#ifndef    JUCE_STANDALONE_APPLICATION" << newLine;
+            out << " #define   JUCE_STANDALONE_APPLICATION " << isStandaloneApplication << newLine;
+            out << "#endif" << newLine;
         }
 
         out << newLine;
@@ -433,12 +481,14 @@ private:
             << " using namespace juce;" << newLine
             << "#endif" << newLine
             << newLine
+            << "#if ! JUCE_DONT_DECLARE_PROJECTINFO" << newLine
             << "namespace ProjectInfo" << newLine
             << "{" << newLine
-            << "    const char* const  projectName    = " << CodeHelpers::addEscapeChars (project.getTitle()).quoted() << ";" << newLine
-            << "    const char* const  versionString  = " << CodeHelpers::addEscapeChars (project.getVersionString()).quoted() << ";" << newLine
+            << "    const char* const  projectName    = " << CppTokeniserFunctions::addEscapeChars (project.getTitle()).quoted() << ";" << newLine
+            << "    const char* const  versionString  = " << CppTokeniserFunctions::addEscapeChars (project.getVersionString()).quoted() << ";" << newLine
             << "    const int          versionNumber  = " << project.getVersionAsHex() << ";" << newLine
             << "}" << newLine
+            << "#endif" << newLine
             << newLine
             << "#endif   // " << headerGuard << newLine;
     }
@@ -466,7 +516,9 @@ private:
             if (maxSize <= 0)
                 maxSize = 10 * 1024 * 1024;
 
-            if (resourceFile.write (binaryDataFiles, maxSize))
+            Result r (resourceFile.write (binaryDataFiles, maxSize));
+
+            if (r.wasOk())
             {
                 hasBinaryData = true;
 
@@ -475,13 +527,12 @@ private:
                     const File& f = binaryDataFiles.getReference(i);
 
                     filesCreated.add (f);
-                    generatedFilesGroup.addFile (f, -1, ! f.hasFileExtension (".h"));
+                    generatedFilesGroup.addFileRetainingSortOrder (f, ! f.hasFileExtension (".h"));
                 }
             }
             else
             {
-                addError ("Can't create binary resources file: "
-                            + project.getBinaryDataCppFile(0).getFullPathName());
+                addError (r.getErrorMessage());
             }
         }
         else
@@ -601,4 +652,4 @@ private:
 };
 
 
-#endif   // __JUCER_PROJECTSAVER_JUCEHEADER__
+#endif   // JUCER_PROJECTSAVER_H_INCLUDED

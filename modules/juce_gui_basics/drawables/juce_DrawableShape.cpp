@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -53,14 +53,14 @@ public:
     {
     }
 
-    bool registerCoordinates()
+    bool registerCoordinates() override
     {
         bool ok = addPoint (fill.gradientPoint1);
         ok = addPoint (fill.gradientPoint2) && ok;
         return addPoint (fill.gradientPoint3) && ok;
     }
 
-    void applyToComponentBounds()
+    void applyToComponentBounds() override
     {
         ComponentScope scope (owner);
         if (isMainFill ? owner.mainFill.recalculateCoords (&scope)
@@ -68,7 +68,7 @@ public:
             owner.repaint();
     }
 
-    void applyNewBounds (const Rectangle<int>&)
+    void applyNewBounds (const Rectangle<int>&) override
     {
         jassertfalse; // drawables can't be resized directly!
     }
@@ -451,4 +451,22 @@ void DrawableShape::FillAndStrokeState::setStrokeType (const PathStrokeType& new
                                      ? "miter" : (newStrokeType.getJointStyle() == PathStrokeType::curved ? "curved" : "bevel"), undoManager);
     state.setProperty (capStyle, newStrokeType.getEndStyle() == PathStrokeType::butt
                                      ? "butt" : (newStrokeType.getEndStyle() == PathStrokeType::square ? "square" : "round"), undoManager);
+}
+
+static bool replaceColourInFill (DrawableShape::RelativeFillType& fill, Colour original, Colour replacement)
+{
+    if (fill.fill.colour == original && fill.fill.isColour())
+    {
+        fill = FillType (replacement);
+        return true;
+    }
+
+    return false;
+}
+
+bool DrawableShape::replaceColour (Colour original, Colour replacement)
+{
+    bool changed1 = replaceColourInFill (mainFill,   original, replacement);
+    bool changed2 = replaceColourInFill (strokeFill, original, replacement);
+    return changed1 || changed2;
 }

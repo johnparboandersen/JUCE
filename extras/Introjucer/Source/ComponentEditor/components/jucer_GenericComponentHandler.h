@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -97,22 +97,22 @@ public:
         return true;
     }
 
-    void getEditableProperties (Component* component, JucerDocument& document, Array <PropertyComponent*>& properties)
+    void getEditableProperties (Component* component, JucerDocument& document, Array<PropertyComponent*>& props)
     {
-        ComponentTypeHandler::getEditableProperties (component, document, properties);
+        ComponentTypeHandler::getEditableProperties (component, document, props);
 
-        properties.add (new GenericCompClassProperty (dynamic_cast <GenericComponent*> (component), document));
-        properties.add (new GenericCompParamsProperty (dynamic_cast <GenericComponent*> (component), document));
+        props.add (new GenericCompClassProperty (dynamic_cast <GenericComponent*> (component), document));
+        props.add (new GenericCompParamsProperty (dynamic_cast <GenericComponent*> (component), document));
     }
 
     String getClassName (Component* comp) const
     {
-        return ((GenericComponent*) comp)->actualClassName;
+        return static_cast<GenericComponent*> (comp)->actualClassName;
     }
 
-    String getCreationParameters (Component* comp)
+    String getCreationParameters (GeneratedCode&, Component* comp)
     {
-        return ((GenericComponent*) comp)->constructorParams;
+        return static_cast<GenericComponent*> (comp)->constructorParams;
     }
 
     void fillInCreationCode (GeneratedCode& code, Component* component, const String& memberVariableName)
@@ -122,7 +122,7 @@ public:
         if (component->getName().isNotEmpty())
             code.constructorCode
                 << memberVariableName << "->setName ("
-                << quotedString (component->getName())
+                << quotedString (component->getName(), false)
                 << ");\n\n";
         else
             code.constructorCode << "\n";
@@ -132,19 +132,19 @@ private:
     class GenericCompClassProperty  : public ComponentTextProperty <GenericComponent>
     {
     public:
-        GenericCompClassProperty (GenericComponent* comp, JucerDocument& document)
-            : ComponentTextProperty <GenericComponent> ("class", 300, false, comp, document)
+        GenericCompClassProperty (GenericComponent* comp, JucerDocument& doc)
+            : ComponentTextProperty <GenericComponent> ("class", 300, false, comp, doc)
         {
         }
 
-        void setText (const String& newText)
+        void setText (const String& newText) override
         {
             document.perform (new GenericCompClassChangeAction (component, *document.getComponentLayout(),
                                                                 CodeHelpers::makeValidIdentifier (newText, false, false, true)),
                               "Change generic component class");
         }
 
-        String getText() const
+        String getText() const override
         {
             return component->actualClassName;
         }
@@ -153,8 +153,8 @@ private:
         class GenericCompClassChangeAction  : public ComponentUndoableAction <GenericComponent>
         {
         public:
-            GenericCompClassChangeAction (GenericComponent* const comp, ComponentLayout& layout, const String& newState_)
-                : ComponentUndoableAction <GenericComponent> (comp, layout),
+            GenericCompClassChangeAction (GenericComponent* const comp, ComponentLayout& l, const String& newState_)
+                : ComponentUndoableAction <GenericComponent> (comp, l),
                   newState (newState_)
             {
                 oldState = comp->actualClassName;
@@ -183,18 +183,18 @@ private:
     class GenericCompParamsProperty  : public ComponentTextProperty <GenericComponent>
     {
     public:
-        GenericCompParamsProperty (GenericComponent* comp, JucerDocument& document)
-            : ComponentTextProperty <GenericComponent> ("constructor params", 1024, true, comp, document)
+        GenericCompParamsProperty (GenericComponent* comp, JucerDocument& doc)
+            : ComponentTextProperty <GenericComponent> ("constructor params", 1024, true, comp, doc)
         {
         }
 
-        void setText (const String& newText)
+        void setText (const String& newText) override
         {
             document.perform (new GenericCompParamsChangeAction (component, *document.getComponentLayout(), newText),
                               "Change generic component class");
         }
 
-        String getText() const
+        String getText() const override
         {
             return component->constructorParams;
         }
@@ -203,8 +203,8 @@ private:
         class GenericCompParamsChangeAction  : public ComponentUndoableAction <GenericComponent>
         {
         public:
-            GenericCompParamsChangeAction (GenericComponent* const comp, ComponentLayout& layout, const String& newState_)
-                : ComponentUndoableAction <GenericComponent> (comp, layout),
+            GenericCompParamsChangeAction (GenericComponent* const comp, ComponentLayout& l, const String& newState_)
+                : ComponentUndoableAction <GenericComponent> (comp, l),
                   newState (newState_)
             {
                 oldState = comp->constructorParams;

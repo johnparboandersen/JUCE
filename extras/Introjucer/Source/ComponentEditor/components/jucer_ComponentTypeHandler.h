@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_COMPONENTTYPEHANDLER_JUCEHEADER__
-#define __JUCER_COMPONENTTYPEHANDLER_JUCEHEADER__
+#ifndef JUCER_COMPONENTTYPEHANDLER_H_INCLUDED
+#define JUCER_COMPONENTTYPEHANDLER_H_INCLUDED
 
 class ComponentOverlayComponent;
 class ComponentLayout;
@@ -62,7 +62,7 @@ public:
 
     virtual void getEditableProperties (Component* component,
                                         JucerDocument& document,
-                                        Array <PropertyComponent*>& properties);
+                                        Array<PropertyComponent*>& props);
 
     virtual void addPropertiesToPropertyPanel (Component* component,
                                                JucerDocument& document,
@@ -79,7 +79,7 @@ public:
 
     void addColourProperties (Component* component,
                               JucerDocument& document,
-                              Array <PropertyComponent*>& properties);
+                              Array<PropertyComponent*>& props);
 
     String getColourIntialisationCode (Component* component,
                                        const String& objectName);
@@ -99,11 +99,11 @@ public:
 
     virtual void fillInGeneratedCode (Component* component, GeneratedCode& code);
 
-    virtual void fillInMemberVariableDeclarations (GeneratedCode& code, Component* component, const String& memberVariableName);
-    virtual void fillInResizeCode (GeneratedCode& code, Component* component, const String& memberVariableName);
-    virtual void fillInCreationCode (GeneratedCode& code, Component* component, const String& memberVariableName);
-    virtual String getCreationParameters (Component* component);
-    virtual void fillInDeletionCode (GeneratedCode& code, Component* component, const String& memberVariableName);
+    virtual void fillInMemberVariableDeclarations (GeneratedCode&, Component*, const String& memberVariableName);
+    virtual void fillInResizeCode (GeneratedCode&, Component*, const String& memberVariableName);
+    virtual void fillInCreationCode (GeneratedCode&, Component*, const String& memberVariableName);
+    virtual String getCreationParameters (GeneratedCode&, Component*);
+    virtual void fillInDeletionCode (GeneratedCode&, Component*, const String& memberVariableName);
 
     //==============================================================================
     const String& getTypeName() const noexcept                { return typeName; }
@@ -136,9 +136,8 @@ protected:
     OwnedArray <ComponentColourInfo> colours;
 
 private:
-    ComponentTypeHandler (const ComponentTypeHandler&);
-    ComponentTypeHandler& operator= (const ComponentTypeHandler&);
+    JUCE_DECLARE_NON_COPYABLE (ComponentTypeHandler)
 };
 
 
-#endif   // __JUCER_COMPONENTTYPEHANDLER_JUCEHEADER__
+#endif   // JUCER_COMPONENTTYPEHANDLER_H_INCLUDED

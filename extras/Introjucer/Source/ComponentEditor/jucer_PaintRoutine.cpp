@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -134,15 +134,13 @@ PaintElement* PaintRoutine::addElementFromXml (const XmlElement& xml, const int 
 
         return elements [action->indexAdded];
     }
-    else
-    {
-        if (PaintElement* const newElement = ObjectTypes::createElementForXml (&xml, this))
-        {
-            elements.insert (index, newElement);
-            changed();
 
-            return newElement;
-        }
+    if (PaintElement* const newElement = ObjectTypes::createElementForXml (&xml, this))
+    {
+        elements.insert (index, newElement);
+        changed();
+
+        return newElement;
     }
 
     return nullptr;
@@ -304,7 +302,7 @@ void PaintRoutine::copySelectedToClipboard()
         }
     }
 
-    SystemClipboard::copyTextToClipboard (clip.createDocument (String::empty, false, false));
+    SystemClipboard::copyTextToClipboard (clip.createDocument ("", false, false));
 }
 
 void PaintRoutine::paste()
@@ -390,10 +388,10 @@ void PaintRoutine::groupSelected()
 
 void PaintRoutine::ungroupSelected()
 {
-    const SelectedItemSet <PaintElement*> temp (selectedElements);
+    const SelectedItemSet<PaintElement*> temp (selectedElements);
 
     for (int i = 0; i < temp.getNumSelected(); ++i)
-        if (PaintElementGroup* const pg = dynamic_cast <PaintElementGroup*> (temp.getSelectedItem (i)))
+        if (PaintElementGroup* const pg = dynamic_cast<PaintElementGroup*> (temp.getSelectedItem (i)))
             pg->ungroup (true);
 }
 

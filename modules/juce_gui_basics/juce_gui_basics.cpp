@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -34,6 +34,8 @@
 // Your project must contain an AppConfig.h file with your project-specific settings in it,
 // and your header search path must make it accessible to the module's files.
 #include "AppConfig.h"
+
+#define NS_FORMAT_FUNCTION(F,A) // To avoid spurious warnings from GCC
 
 #include "../juce_core/native/juce_BasicNativeHeaders.h"
 #include "juce_gui_basics.h"
@@ -103,6 +105,11 @@
  #include <X11/cursorfont.h>
  #include <unistd.h>
 
+ #if JUCE_USE_XRANDR
+  /* If you're trying to use Xrandr, you'll need to install the "libxrandr-dev" package..  */
+  #include <X11/extensions/Xrandr.h>
+ #endif
+
  #if JUCE_USE_XINERAMA
   /* If you're trying to use Xinerama, you'll need to install the "libxinerama-dev" package..  */
   #include <X11/extensions/Xinerama.h>
@@ -132,6 +139,12 @@
 //==============================================================================
 namespace juce
 {
+
+#define ASSERT_MESSAGE_MANAGER_IS_LOCKED \
+    jassert (MessageManager::getInstance()->currentThreadHasLockedMessageManager());
+
+#define ASSERT_MESSAGE_MANAGER_IS_LOCKED_OR_OFFSCREEN \
+    jassert (MessageManager::getInstance()->currentThreadHasLockedMessageManager() || getPeer() == nullptr);
 
 extern bool juce_areThereAnyAlwaysOnTopWindows();
 
@@ -173,13 +186,11 @@ extern bool juce_areThereAnyAlwaysOnTopWindows();
 #include "filebrowser/juce_FileBrowserComponent.cpp"
 #include "filebrowser/juce_FileChooser.cpp"
 #include "filebrowser/juce_FileChooserDialogBox.cpp"
-#include "filebrowser/juce_FileFilter.cpp"
 #include "filebrowser/juce_FileListComponent.cpp"
 #include "filebrowser/juce_FilenameComponent.cpp"
 #include "filebrowser/juce_FileSearchPathListComponent.cpp"
 #include "filebrowser/juce_FileTreeComponent.cpp"
 #include "filebrowser/juce_ImagePreviewComponent.cpp"
-#include "filebrowser/juce_WildcardFileFilter.cpp"
 #include "layout/juce_ComponentAnimator.cpp"
 #include "layout/juce_ComponentBoundsConstrainer.cpp"
 #include "layout/juce_ComponentBuilder.cpp"
@@ -198,6 +209,9 @@ extern bool juce_areThereAnyAlwaysOnTopWindows();
 #include "layout/juce_TabbedComponent.cpp"
 #include "layout/juce_Viewport.cpp"
 #include "lookandfeel/juce_LookAndFeel.cpp"
+#include "lookandfeel/juce_LookAndFeel_V2.cpp"
+#include "lookandfeel/juce_LookAndFeel_V1.cpp"
+#include "lookandfeel/juce_LookAndFeel_V3.cpp"
 #include "menus/juce_MenuBarComponent.cpp"
 #include "menus/juce_MenuBarModel.cpp"
 #include "menus/juce_PopupMenu.cpp"

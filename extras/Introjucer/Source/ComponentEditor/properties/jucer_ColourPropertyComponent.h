@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_COLOURPROPERTYCOMPONENT_JUCEHEADER__
-#define __JUCER_COLOURPROPERTYCOMPONENT_JUCEHEADER__
+#ifndef JUCER_COLOURPROPERTYCOMPONENT_H_INCLUDED
+#define JUCER_COLOURPROPERTYCOMPONENT_H_INCLUDED
 
 #include "../../Application/jucer_Application.h"
 
@@ -90,11 +90,8 @@ public:
 
         void mouseDown (const MouseEvent&)
         {
-            ColourSelectorComp colourSelector (this, canResetToDefault);
-
-            PopupMenu m;
-            m.addCustomItem (1234, &colourSelector, 300, 400, false);
-            m.showAt (this);
+            CallOutBox::launchAsynchronously (new ColourSelectorComp (this, canResetToDefault),
+                                              getScreenBounds(), nullptr);
         }
 
         void changeListenerCallback (ChangeBroadcaster* source)
@@ -114,16 +111,18 @@ public:
                 : owner (owner_),
                   defaultButton ("Reset to Default")
             {
-                addAndMakeVisible (&selector);
+                addAndMakeVisible (selector);
                 selector.setName ("Colour");
                 selector.setCurrentColour (owner->getColour());
                 selector.addChangeListener (owner);
 
                 if (canReset)
                 {
-                    addAndMakeVisible (&defaultButton);
+                    addAndMakeVisible (defaultButton);
                     defaultButton.addListener (this);
                 }
+
+                setSize (300, 400);
             }
 
             void resized()
@@ -202,7 +201,7 @@ public:
             return owner->getColour();
         }
 
-        void resetToDefault()
+        void resetToDefault() override
         {
             owner->resetToDefault();
         }
@@ -212,4 +211,4 @@ public:
 };
 
 
-#endif   // __JUCER_COLOURPROPERTYCOMPONENT_JUCEHEADER__
+#endif   // JUCER_COLOURPROPERTYCOMPONENT_H_INCLUDED

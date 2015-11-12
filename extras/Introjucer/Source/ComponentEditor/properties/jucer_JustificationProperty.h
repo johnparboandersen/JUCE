@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -22,8 +22,8 @@
   ==============================================================================
 */
 
-#ifndef __JUCER_JUSTIFICATIONPROPERTY_JUCEHEADER__
-#define __JUCER_JUSTIFICATIONPROPERTY_JUCEHEADER__
+#ifndef JUCER_JUSTIFICATIONPROPERTY_H_INCLUDED
+#define JUCER_JUSTIFICATIONPROPERTY_H_INCLUDED
 
 
 class JustificationProperty  : public ChoicePropertyComponent
@@ -88,10 +88,10 @@ public:
                               Justification::bottomLeft,
                               Justification::bottomRight };
 
-        const int flags = getJustification().getFlags();
+        const int rawFlags = getJustification().getFlags();
 
         for (int i = numElementsInArray (types); --i >= 0;)
-            if (types[i] == flags)
+            if (types[i] == rawFlags)
                 return i;
 
         return -1;
@@ -99,4 +99,4 @@ public:
 };
 
 
-#endif   // __JUCER_JUSTIFICATIONPROPERTY_JUCEHEADER__
+#endif   // JUCER_JUSTIFICATIONPROPERTY_H_INCLUDED

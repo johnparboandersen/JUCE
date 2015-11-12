@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -21,7 +21,6 @@
 
   ==============================================================================
 */
-
 
 class ModuleItem   : public ConfigTreeItemBase
 {
@@ -52,7 +51,7 @@ public:
     void handlePopupMenuResult (int resultCode) override
     {
         if (resultCode == 1)
-            project.getModules().removeModule (moduleID);
+            deleteItem();
     }
 
     Project& project;
@@ -71,7 +70,7 @@ private:
         ModuleSettingsPanel (Project& p, const String& modID)
             : project (p), moduleID (modID)
         {
-            addAndMakeVisible (&group);
+            addAndMakeVisible (group);
             group.setName ("Module: " + moduleID);
             refresh();
         }
@@ -88,8 +87,9 @@ private:
                 props.add (new MissingDependenciesComponent (project, moduleID));
 
             for (Project::ExporterIterator exporter (project); exporter.next();)
-                props.add (new TextPropertyComponent (exporter->getPathForModuleValue (moduleID),
-                                                      "Path for " + exporter->getName().quoted(), 1024, false),
+                props.add (new FilePathPropertyComponent (exporter->getPathForModuleValue (moduleID),
+                                                          "Path for " + exporter->getName().quoted(),
+                                                          true, "*", project.getProjectFolder()),
                            "A path to the folder that contains the " + moduleID + " module when compiling the "
                             + exporter->getName().quoted() + " target. "
                            "This can be an absolute path, or relative to the jucer project folder, but it "
@@ -100,6 +100,12 @@ private:
                        "If this is enabled, then a local copy of the entire module will be made inside your project (in the auto-generated JuceLibraryFiles folder), "
                        "so that your project will be self-contained, and won't need to contain any references to files in other folders. "
                        "This also means that you can check the module into your source-control system to make sure it is always in sync with your own code.");
+
+            props.add (new BooleanPropertyComponent (project.getModules().shouldNotOverwriteModuleCodeOnSave (moduleID),
+                                                     "Preserve local module changes",
+                                                     "Don't overwrite changes to JUCE modules"),
+                        "Generally, this should be disabled. However if you've got local changes to "
+                        "JUCE code that you want to preserve, enabling this lets you do that.");
 
             props.add (new BooleanPropertyComponent (project.getModules().shouldShowAllModuleFilesInProject (moduleID),
                                                      "Add source to project", "Make module files browsable in projects"),
@@ -146,27 +152,36 @@ private:
         String moduleID;
 
         //==============================================================================
-        class ModuleInfoComponent  : public PropertyComponent
+        class ModuleInfoComponent  : public PropertyComponent,
+                                     private Value::Listener
         {
         public:
             ModuleInfoComponent (Project& p, const String& modID)
                 : PropertyComponent ("Module", 150), project (p), moduleID (modID)
             {
+                for (Project::ExporterIterator exporter (project); exporter.next();)
+                    listeningValues.add (new Value (exporter->getPathForModuleValue (moduleID)))
+                        ->addListener (this);
+
+                refresh();
             }
 
-            void refresh() {}
+        private:
+            void refresh() override
+            {
+                info = project.getModules().getModuleInfo (moduleID);
+                repaint();
+            }
 
-            void paint (Graphics& g)
+            void paint (Graphics& g) override
             {
                 g.setColour (Colours::white.withAlpha (0.4f));
-                g.fillRect (0, 0, getWidth(), getHeight() - 1);
+                g.fillRect (getLocalBounds().withTrimmedBottom (1));
 
                 AttributedString s;
                 s.setJustification (Justification::topLeft);
 
                 Font f (14.0f);
-
-                ModuleDescription info (project.getModules().getModuleInfo (moduleID));
 
                 if (info.isValid())
                 {
@@ -184,9 +199,15 @@ private:
                 s.draw (g, getLocalBounds().reduced (6, 5).toFloat());
             }
 
-        private:
+            void valueChanged (Value&) override
+            {
+                refresh();
+            }
+
             Project& project;
             String moduleID;
+            OwnedArray<Value> listeningValues;
+            ModuleDescription info;
 
             JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ModuleInfoComponent)
         };
@@ -202,15 +223,15 @@ private:
                   missingDependencies (project.getModules().getExtraDependenciesNeeded (modID)),
                   fixButton ("Add Required Modules")
             {
-                addAndMakeVisible (&fixButton);
+                addAndMakeVisible (fixButton);
                 fixButton.setColour (TextButton::buttonColourId, Colours::red);
                 fixButton.setColour (TextButton::textColourOffId, Colours::white);
                 fixButton.addListener (this);
             }
 
-            void refresh() {}
+            void refresh() override {}
 
-            void paint (Graphics& g)
+            void paint (Graphics& g) override
             {
                 g.setColour (Colours::white.withAlpha (0.4f));
                 g.fillRect (0, 0, getWidth(), getHeight() - 1);
@@ -225,7 +246,7 @@ private:
                 s.draw (g, getLocalBounds().reduced (4, 16).toFloat());
             }
 
-            void buttonClicked (Button*)
+            void buttonClicked (Button*) override
             {
                 bool anyFailed = false;
 
@@ -246,11 +267,11 @@ private:
                 if (anyFailed)
                     AlertWindow::showMessageBoxAsync (AlertWindow::WarningIcon,
                                                       "Adding Missing Dependencies",
-                                                      "Couldn't locate some of these modules - you'll beed to find their "
+                                                      "Couldn't locate some of these modules - you'll need to find their "
                                                       "folders manually and add them to the list.");
             }
 
-            void resized()
+            void resized() override
             {
                 fixButton.setBounds (getWidth() - 168, getHeight() - 26, 160, 22);
             }
@@ -279,6 +300,7 @@ public:
         moduleListTree.addListener (this);
     }
 
+    int getItemHeight() const override      { return 22; }
     bool isModulesList() const override     { return true; }
     bool canBeSelected() const override     { return true; }
     bool mightContainSubItems() override    { return true; }
@@ -289,28 +311,37 @@ public:
     bool isMissing() override               { return false; }
     Icon getIcon() const override           { return Icon (getIcons().graph, getContrastingColour (Colours::red, 0.5f)); }
 
-    void showDocument()
+    void showDocument() override
     {
         if (ProjectContentComponent* pcc = getProjectContentComponent())
             pcc->setEditorComponent (new ModulesPanel (project), nullptr);
     }
 
+    static File getManifestFile (const File& draggedFile)
+    {
+        if (draggedFile.getFileName() == ModuleDescription::getManifestFileName())
+            return draggedFile;
+
+        return draggedFile.getChildFile (ModuleDescription::getManifestFileName());
+    }
+
     bool isInterestedInFileDrag (const StringArray& files) override
     {
         for (int i = files.size(); --i >= 0;)
-            if (ModuleDescription (File (files[i]).getChildFile (ModuleDescription::getManifestFileName())).isValid())
+            if (ModuleDescription (getManifestFile (files[i])).isValid())
                 return true;
 
         return false;
     }
 
-    void filesDropped (const StringArray& files, int insertIndex) override
+    void filesDropped (const StringArray& files, int /*insertIndex*/) override
     {
         Array<ModuleDescription> modules;
 
         for (int i = files.size(); --i >= 0;)
         {
-            ModuleDescription m (File (files[i]).getChildFile (ModuleDescription::getManifestFileName()));
+            ModuleDescription m (getManifestFile (files[i]));
+
             if (m.isValid())
                 modules.add (m);
         }
@@ -357,9 +388,9 @@ public:
     }
 
     //==============================================================================
-    void valueTreeChildAdded (ValueTree& parentTree, ValueTree&) override   { refreshIfNeeded (parentTree); }
-    void valueTreeChildRemoved (ValueTree& parentTree, ValueTree&) override { refreshIfNeeded (parentTree); }
-    void valueTreeChildOrderChanged (ValueTree& parentTree) override        { refreshIfNeeded (parentTree); }
+    void valueTreeChildAdded (ValueTree& parentTree, ValueTree&) override         { refreshIfNeeded (parentTree); }
+    void valueTreeChildRemoved (ValueTree& parentTree, ValueTree&, int) override  { refreshIfNeeded (parentTree); }
+    void valueTreeChildOrderChanged (ValueTree& parentTree, int, int) override    { refreshIfNeeded (parentTree); }
 
     void refreshIfNeeded (ValueTree& changedTree)
     {

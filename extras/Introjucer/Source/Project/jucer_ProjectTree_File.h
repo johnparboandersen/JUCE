@@ -2,7 +2,7 @@
   ==============================================================================
 
    This file is part of the JUCE library.
-   Copyright (c) 2013 - Raw Material Software Ltd.
+   Copyright (c) 2015 - ROLI Ltd.
 
    Permission is granted to use this software under the terms of either:
    a) the GPL v2 (or any later version)
@@ -40,12 +40,10 @@ public:
 
     static File findCorrespondingHeaderOrCpp (const File& f)
     {
-        if (f.hasFileExtension (sourceFileExtensions))
-            return f.withFileExtension (".h");
-        else if (f.hasFileExtension (headerFileExtensions))
-            return f.withFileExtension (".cpp");
+        if (f.hasFileExtension (sourceFileExtensions))  return f.withFileExtension (".h");
+        if (f.hasFileExtension (headerFileExtensions))  return f.withFileExtension (".cpp");
 
-        return File::nonexistent;
+        return File();
     }
 
     void setName (const String& newName) override
